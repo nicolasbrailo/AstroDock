@@ -4,23 +4,39 @@ import android.os.Bundle
 import android.text.InputType
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.fragment.app.Fragment
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceFragmentCompat
+import androidx.viewpager2.adapter.FragmentStateAdapter
+import androidx.viewpager2.widget.ViewPager2
+import com.google.android.material.tabs.TabLayout
+import com.google.android.material.tabs.TabLayoutMediator
 
-// Edits the settings in Settings.kt. SlideshowActivity picks up changes when it
-// comes back to the foreground.
+// Two tabs: the slideshow settings (Settings.kt) and what the app needs from
+// the system (SystemSettingsFragment).
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setContentView(R.layout.activity_settings)
         title = getString(R.string.settings_title)
-        if (savedInstanceState == null) {
-            supportFragmentManager.beginTransaction()
-                .replace(android.R.id.content, SettingsFragment())
-                .commit()
+
+        val pager = findViewById<ViewPager2>(R.id.pager)
+        pager.adapter = object : FragmentStateAdapter(this) {
+            override fun getItemCount() = 2
+
+            override fun createFragment(position: Int): Fragment =
+                if (position == 0) SlideshowSettingsFragment() else SystemSettingsFragment()
         }
+        TabLayoutMediator(findViewById<TabLayout>(R.id.tabs), pager) { tab, position ->
+            tab.text = getString(
+                if (position == 0) R.string.settings_tab_slideshow else R.string.settings_tab_system
+            )
+        }.attach()
     }
 
-    class SettingsFragment : PreferenceFragmentCompat() {
+    // Edits the settings in Settings.kt. SlideshowActivity picks up changes when
+    // it comes back to the foreground.
+    class SlideshowSettingsFragment : PreferenceFragmentCompat() {
         override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
             setPreferencesFromResource(R.xml.preferences, rootKey)
 

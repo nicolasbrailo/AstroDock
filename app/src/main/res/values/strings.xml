@@ -23,4 +23,30 @@
     <string name="slideshow_error">%1$s\n\nRetrying soon. Tap the screen for settings.</string>
 
     <string name="app_list_title">Apps</string>
+
+    <string name="settings_tab_slideshow">Slideshow</string>
+    <string name="settings_tab_system">System</string>
+    <string name="system_granted">Set up</string>
+    <string name="system_missing">Not set up</string>
+    <string name="system_all_done">Everything below is set up.</string>
+
+    <string name="system_home_title">Home screen</string>
+    <string name="system_home_description">Show the slideshow instead of the Portal home screen.</string>
+    <string name="system_home_button">Choose home screen</string>
+
+    <string name="system_dream_title">Screensaver</string>
+    <string name="system_dream_description">Show the slideshow when the Portal is idle. Pick alauncher in the list that opens.</string>
+    <string name="system_dream_button">Open screensaver settings</string>
+
+    <string name="system_admin_title">Turn the screen off</string>
+    <string name="system_admin_description">Lets the app switch the screen off itself, instead of waiting for the system timeout.</string>
+    <string name="system_admin_button">Activate</string>
+    <string name="system_admin_explanation">alauncher uses this only to turn the screen off.</string>
+
+    <string name="system_write_settings_title">Change system settings</string>
+    <string name="system_write_settings_description">Lets the app change how long the Portal waits before starting the screensaver.</string>
+    <string name="system_write_settings_button">Allow</string>
+
+    <string name="system_sleep_timeout_title">Screen off delay: %1$s</string>
+    <string name="system_sleep_timeout_description">How long the Portal waits after it last saw someone before turning the screen off. This one can only be changed over adb:\n\nadb shell settings put secure sleep_timeout 120000</string>
 </resources>

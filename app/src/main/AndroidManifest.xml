@@ -26,20 +26,61 @@
         android:usesCleartextTraffic="true"
         tools:ignore="UnusedAttribute">
 
+        <!-- The home screen. singleTask + stateNotNeeded is what a launcher
+             wants: pressing Home returns to this one activity, closing
+             anything opened on top of it, and it survives being killed. -->
         <activity
             android:name=".SlideshowActivity"
             android:exported="true"
+            android:launchMode="singleTask"
+            android:stateNotNeeded="true"
             android:theme="@style/Theme.Alauncher.Fullscreen">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Makes it selectable as the home screen. It only becomes the
+                 home screen once the user picks it (System settings tab). -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
+
+        <!-- The slideshow as the system screensaver. BIND_DREAM_SERVICE means
+             only the system can start it. -->
+        <service
+            android:name=".SlideshowDreamService"
+            android:exported="true"
+            android:permission="android.permission.BIND_DREAM_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.dreams.DreamService" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.dream"
+                android:resource="@xml/dream" />
+        </service>
 
         <activity
             android:name=".AppListActivity"
             android:exported="false"
             android:theme="@style/Theme.Alauncher.Fullscreen" />
+
+        <!-- Turns the screen off; activated by the user in the system settings tab -->
+        <receiver
+            android:name=".ScreenAdminReceiver"
+            android:description="@string/system_admin_explanation"
+            android:exported="true"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
+            <meta-data
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
 
         <activity
             android:name=".SettingsActivity"

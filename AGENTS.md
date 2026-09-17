@@ -45,10 +45,32 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
 - `PictureHistory.kt`: the pictures the user can swipe back through.
 - `Settings.kt`: settings stored in SharedPreferences: keys, defaults and valid
   ranges.
-- `SettingsActivity.kt` + `res/xml/preferences.xml`: settings screen. The
-  preference keys in the XML must match `Settings.KEY_*`.
-- `SlideshowActivity.kt` + `res/layout/activity_slideshow.xml`: the slideshow,
-  launcher entry point.
+- `SettingsActivity.kt` + `res/layout/activity_settings.xml`: settings with two
+  tabs. The Slideshow tab is the preferences in `res/xml/preferences.xml`, whose
+  keys must match `Settings.KEY_*`.
+- `SystemSettingsFragment.kt`: the System tab. One item per thing the app needs
+  from the system, with its state and a button that opens the system dialog.
+  These intents must be started **for a result** (`systemDialog.launch`): the
+  role dialog identifies the caller that way and closes immediately otherwise.
+- `ScreenAdminReceiver.kt` + `res/xml/device_admin.xml`: device admin with the
+  force-lock policy only, so the app can turn the screen off.
+- `SlideshowController.kt` + `res/layout/slideshow.xml`: the slideshow itself.
+  Used by both the home screen and the screensaver; `interactive` is false in
+  the screensaver, where a touch wakes the device instead.
+- `SlideshowActivity.kt`: the slideshow as the home screen. It declares HOME and
+  LAUNCHER, `singleTask` and `stateNotNeeded`. It only becomes the home screen
+  once the user picks it.
+- `SlideshowDreamService.kt` + `res/xml/dream.xml`: the same slideshow as the
+  system screensaver (an Android "dream"). `isInteractive` and the other window
+  properties are set in `onCreate()`, before the window is created: setting them
+  in `onAttachedToWindow()` leaves the window focusable, and it then swallows
+  every touch, so the screensaver can't be dismissed and the device looks
+  frozen. It also ends the screensaver itself in `dispatchTouchEvent`.
+- `PortalState.kt`: what the Portal is doing, for the debug overlay. Tapping the
+  clock shows it.
+- `SystemBars.kt`: hides the status and navigation bars. The system shows them
+  again whenever a window loses focus, so activities call `hideSystemBars()`
+  from `onWindowFocusChanged`, not only at startup.
 - `AppListActivity.kt` + `res/layout/activity_app_list.xml`, `item_app.xml`:
   grid of launchable apps, and the settings button.
 
@@ -125,6 +147,49 @@ documents the API). Keep the two behaving the same.
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album
 (default 0 = all) and seconds per picture (default 30).
+
+## Portal platform notes (measured on the device, 2026-09-17)
+
+- Production `user` build, no root. adb runs as `shell`. The Portal launcher
+  (`com.facebook.alohaapps.launcher`) holds the HOME role.
+- **Presence detection** runs in the Portal's camera process
+  (`aloha.CameraServiceController: Notify people presence`, about every 30s
+  while it sees someone). `PresenceManager` (package
+  `com.facebook.alohaservices.presence`) then reports user activity to the power
+  manager without changing the lights, which keeps the device awake. When the
+  screen is off, it wakes it (`Full_Wakeup_PresenceManager`). The camera keeps
+  watching while the screen is off.
+- A third-party app **can't** read presence directly. The broadcasts
+  (`RECEIVE_PRESENCE_TRANSITION`), the state content providers
+  (`ACCESS_STATESDB`) and `IDLE_SCREEN_*` are all `signature` or `privileged`.
+- What an app **can** see: the effects. `SCREEN_ON`/`SCREEN_OFF` and
+  `DREAMING_STARTED`/`DREAMING_STOPPED` broadcasts (register them in code, not
+  in the manifest), and the light sensor.
+- **Timers:** after `screen_off_timeout` (system setting, 300000 ms) without
+  activity, the device starts the screensaver (dream). After `sleep_timeout`
+  (secure setting, 1200000 ms by default) since the last activity, including
+  presence, it goes to sleep. Both can be changed with
+  `adb shell settings put`.
+- **Portal's ambient mode** is a screensaver:
+  `screensaver_components=com.facebook.alohaapps.launcher/com.facebook.aloha.app.home.touch.HomeDreamService`,
+  a windowless dream that starts the home activity. When presence wakes the
+  screen, the system starts dreaming, not the home activity.
+- **Dark room clock:** the Portal launcher switches to a full-screen clock when
+  the light sensor reads dark (`AmbientLightSensor: luxDark`). Covering the
+  camera also covers the light sensor.
+- A keep-screen-on flag in our app would block sleep entirely, and with it the
+  "screen off when nobody is around" behaviour.
+- `tools/capture-presence.sh OUT_DIR` records logcat, power, dream, top
+  activity and light-sensor changes, for experiments like these.
+- `tools/setup-device.sh` does the parts an app can't: `sleep_timeout` (secure
+  setting) and, as a shortcut, the screensaver and home screen. Everything else
+  is granted from the System tab.
+- `sleep_timeout` does not stick: it was back at the Portal's 1200000 twice
+  after the device dreamt and woke again, so something on the Portal resets it.
+  Don't rely on it; to control when the screen goes off, use the device admin
+  (`ScreenAdminReceiver`) and `DevicePolicyManager.lockNow()`.
+- Declaring HOME means that, until the user picks a default home app, pressing
+  Home shows a chooser between alauncher and the Portal launcher.
 
 ## Conventions and constraints
 
