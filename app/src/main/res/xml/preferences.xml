@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keys must match the KEY_* constants in Settings.kt -->
+<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <PreferenceCategory app:title="@string/settings_category_server">
+        <EditTextPreference
+            app:key="server_url"
+            app:title="@string/settings_server_url"
+            app:dialogMessage="@string/settings_server_url_hint"
+            app:useSimpleSummaryProvider="true" />
+        <!-- Summary is set in code, so the key isn't shown on screen -->
+        <EditTextPreference
+            app:key="api_key"
+            app:title="@string/settings_api_key"
+            app:dialogMessage="@string/settings_api_key_hint" />
+    </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/settings_category_slideshow">
+        <EditTextPreference
+            app:key="max_pictures_per_album"
+            app:title="@string/settings_max_pictures"
+            app:dialogMessage="@string/settings_max_pictures_hint"
+            app:defaultValue="20"
+            app:useSimpleSummaryProvider="true" />
+        <EditTextPreference
+            app:key="percent_of_album"
+            app:title="@string/settings_percent"
+            app:dialogMessage="@string/settings_percent_hint"
+            app:defaultValue="0"
+            app:useSimpleSummaryProvider="true" />
+        <EditTextPreference
+            app:key="slide_seconds"
+            app:title="@string/settings_slide_seconds"
+            app:dialogMessage="@string/settings_slide_seconds_hint"
+            app:defaultValue="30"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
+</PreferenceScreen>

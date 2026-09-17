@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black"
+    android:keepScreenOn="true">
+
+    <!-- The picture on screen and its neighbours, which SlideshowActivity keeps
+         off screen to either side and slides in while swiping. Which view plays
+         which role changes as the user moves through pictures. -->
+    <ImageView
+        android:id="@+id/picture_a"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter" />
+
+    <ImageView
+        android:id="@+id/picture_b"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter" />
+
+    <ImageView
+        android:id="@+id/picture_c"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitCenter" />
+
+    <!-- Bottom left corner: the time, and the metadata of the picture on screen.
+         Shadows keep the text readable over bright pictures. -->
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|start"
+        android:layout_margin="24dp"
+        android:orientation="vertical">
+
+        <TextClock
+            android:id="@+id/clock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:format12Hour="HH:mm"
+            android:format24Hour="HH:mm"
+            android:shadowColor="#CC000000"
+            android:shadowDy="2"
+            android:shadowRadius="8"
+            android:textColor="@android:color/white"
+            android:textSize="56sp" />
+
+        <!-- Tapping toggles between one line and the full details -->
+        <TextView
+            android:id="@+id/picture_info"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:clickable="true"
+            android:focusable="true"
+            android:maxWidth="600dp"
+            android:paddingVertical="4dp"
+            android:paddingHorizontal="4dp"
+            android:shadowColor="#CC000000"
+            android:shadowDy="1"
+            android:shadowRadius="6"
+            android:textColor="@android:color/white"
+            android:textSize="20sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Shown while loading or when something failed -->
+    <TextView
+        android:id="@+id/status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_margin="32dp"
+        android:background="@drawable/status_background"
+        android:gravity="center"
+        android:padding="16dp"
+        android:textColor="@android:color/white"
+        android:textSize="18sp"
+        android:visibility="gone" />
+</FrameLayout>
