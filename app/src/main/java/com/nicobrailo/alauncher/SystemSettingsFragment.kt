@@ -108,6 +108,16 @@ class SystemSettingsFragment : Fragment() {
                 ),
             ),
             Item(
+                title = getString(R.string.system_overlay_title),
+                description = getString(R.string.system_overlay_description),
+                buttonText = getString(R.string.system_overlay_button),
+                done = AndroidSettings.canDrawOverlays(context),
+                intent = Intent(
+                    AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:${context.packageName}")
+                ),
+            ),
+            Item(
                 title = getString(R.string.system_media_title),
                 description = getString(R.string.system_media_description),
                 buttonText = getString(R.string.system_media_button),

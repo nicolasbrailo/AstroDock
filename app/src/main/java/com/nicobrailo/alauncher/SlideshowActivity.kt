@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
+import com.nicobrailo.alauncher.overlay.HomeButtonService
 
 // The home screen: a full screen slideshow of random Immich pictures, driven by
 // SlideshowController. Tapping it opens AppListActivity. The same slideshow
@@ -28,6 +29,8 @@ class SlideshowActivity : AppCompatActivity() {
     override fun onStart() {
         super.onStart()
         slideshow.start()
+        // Whatever app the home button was covering, it isn't in front now
+        HomeButtonService.hide(this)
     }
 
     // The system shows the bars again whenever the window loses focus

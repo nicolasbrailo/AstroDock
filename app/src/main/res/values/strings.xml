@@ -77,4 +77,14 @@
     <string name="settings_night_start">Night starts at (hour)</string>
     <string name="settings_night_end">Night ends at (hour)</string>
     <string name="settings_night_hour_hint">Hour of the day, 0 to 23</string>
+
+    <string name="home_button_description">Home</string>
+    <string name="home_button_channel">Home button</string>
+    <string name="home_button_notification">Showing the home button over this app</string>
+    <string name="app_menu_home_button_on">Show a home button over this app</string>
+    <string name="app_menu_home_button_off">Don\'t show a home button over this app</string>
+
+    <string name="system_overlay_title">Home button over other apps</string>
+    <string name="system_overlay_description">Lets the launcher draw a home button over apps that hide the Portal\'s own Back and Home buttons, like WhatsApp. Pick the apps by long-pressing them in the app list.</string>
+    <string name="system_overlay_button">Allow</string>
 </resources>

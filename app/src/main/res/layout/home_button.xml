@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The floating home button drawn over other apps by HomeButtonService. An
+     ImageView, not an ImageButton: a button brings the theme's own background
+     and paints over the translucent circle. -->
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="48dp"
+    android:layout_height="48dp"
+    android:background="@drawable/home_button_background"
+    android:clickable="true"
+    android:contentDescription="@string/home_button_description"
+    android:focusable="false"
+    android:padding="12dp"
+    android:scaleType="fitCenter"
+    android:src="@drawable/ic_home" />

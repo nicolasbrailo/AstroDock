@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.Settings as AndroidSettings
 import android.util.Log
 import android.view.DragEvent
 import android.view.LayoutInflater
@@ -23,6 +24,8 @@ import com.nicobrailo.alauncher.apps.FolderOps
 import com.nicobrailo.alauncher.apps.FolderStore
 import com.nicobrailo.alauncher.apps.LauncherApp
 import com.nicobrailo.alauncher.apps.LauncherModel
+import com.nicobrailo.alauncher.overlay.HomeButtonApps
+import com.nicobrailo.alauncher.overlay.HomeButtonService
 import kotlinx.coroutines.launch
 import java.util.UUID
 
@@ -51,6 +54,7 @@ class AppListActivity : AppCompatActivity() {
 
     private lateinit var model: LauncherModel
     private lateinit var folderStore: FolderStore
+    private lateinit var homeButtonApps: HomeButtonApps
     private val adapter = EntryAdapter()
 
     private var apps: List<LauncherApp> = emptyList()
@@ -72,6 +76,7 @@ class AppListActivity : AppCompatActivity() {
 
         model = LauncherModel(this) { refresh() }
         folderStore = FolderStore(this)
+        homeButtonApps = HomeButtonApps(this)
 
         val grid = findViewById<RecyclerView>(R.id.apps)
         grid.layoutManager = GridLayoutManager(this, columns())
@@ -135,6 +140,10 @@ class AppListActivity : AppCompatActivity() {
     private fun launch(app: LauncherApp) {
         try {
             model.launch(app)
+            // Some apps leave no way back to the launcher (see HomeButtonService)
+            if (homeButtonApps.isEnabled(app.component.packageName)) {
+                HomeButtonService.show(this)
+            }
             finish()
         } catch (e: SecurityException) {
             // Uninstalled since the list was built, or not launchable any more
@@ -192,6 +201,25 @@ class AppListActivity : AppCompatActivity() {
                 onChanged()
                 true
             }
+        }
+        val packageName = app.component.packageName
+        val hasHomeButton = homeButtonApps.isEnabled(packageName)
+        val homeButtonText =
+            if (hasHomeButton) R.string.app_menu_home_button_off else R.string.app_menu_home_button_on
+        menu.menu.add(homeButtonText).setOnMenuItemClickListener {
+            // Without the permission the button can't be drawn, so ask for it
+            if (!hasHomeButton && !AndroidSettings.canDrawOverlays(this)) {
+                // The permission is ours, not the app's we're covering
+                startActivity(
+                    Intent(
+                        AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse("package:${this.packageName}")
+                    )
+                )
+            }
+            homeButtonApps.setEnabled(packageName, !hasHomeButton)
+            onChanged()
+            true
         }
         if (insideFolder) {
             menu.menu.add(R.string.app_menu_remove_from_folder).setOnMenuItemClickListener {

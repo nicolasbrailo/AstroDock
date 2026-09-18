@@ -112,6 +112,16 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   than two apps dissolves.
 - `apps/FolderStore.kt`: saves the folders as JSON in their own
   SharedPreferences file.
+- `overlay/HomeButtonService.kt` + `overlay/HomeButtonApps.kt`: a home button
+  drawn on top of another app, for apps that leave no way back to the launcher.
+  WhatsApp (the phone build, `com.whatsapp`) is the reason: its own header
+  replaces the Portal's Back/Home bar, and the Portal has no home key. It's
+  per app, chosen in the app list's long-press menu, and needs the "display over
+  other apps" permission from the System tab. `AppListActivity` starts the
+  service when it launches a flagged app and `SlideshowActivity.onStart` stops
+  it, so the button is only there while that app is in front. The service runs
+  in the foreground (with a quiet notification), because it has to outlive the
+  launcher's own screen.
 
 Unit tests are in `app/src/test/`. `android.util.Log` is a no-op there
 (`unitTests.isReturnDefaultValues`), and `org.json` is a stub, so code that
@@ -198,6 +208,8 @@ documents the API). Keep the two behaving the same.
   other profiles), rename and ungroup for a folder. Inside an open folder, the
   menu can also take an app out.
 - Entries are sorted by name; there's no manual ordering.
+- The long-press menu also offers a home button over that app (see
+  `HomeButtonService`), which is off for every app until the user asks for it.
 
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album
@@ -256,6 +268,14 @@ settings reset the slideshow.
   (`ScreenAdminReceiver`) and `DevicePolicyManager.lockNow()`.
 - Declaring HOME means that, until the user picks a default home app, pressing
   Home shows a chooser between alauncher and the Portal launcher.
+- Some apps leave no way back to the launcher. With `com.whatsapp` in front the
+  Portal's SystemUI still reports its Back and Home buttons as visible, but
+  nothing is drawn and taps in that area do nothing; Jellyfin and Spotify, also
+  sideloaded, are fine. It happens with the Portal's own launcher as home too,
+  so it isn't ours. The way out is the home button overlay above, or
+  `adb shell input keyevent KEYCODE_HOME`.
+- Swiping up from the bottom edge opens the Portal's Control Center (volume,
+  brightness, power). It has no Home button.
 - The floating bug-report pill is an overlay window (`BugnubPillViewService`)
   drawn by `com.facebook.aloha.system.services`, not by the bug-reporter app
   (disabling that app changes nothing). No setting controls it;

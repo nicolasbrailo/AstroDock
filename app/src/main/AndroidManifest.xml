@@ -9,6 +9,12 @@
          needs both this declaration and that grant. -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
+    <!-- The home button drawn over apps that hide the Portal's own Back/Home
+         bar (WhatsApp does). The user grants it in the System tab and picks the
+         apps in the app list's long-press menu. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+
     <!-- Lets AppListActivity see the apps it can launch (Android 11+ hides
          other packages otherwise) -->
     <queries>
@@ -52,6 +58,10 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".overlay.HomeButtonService"
+            android:exported="false" />
 
         <!-- The slideshow as the system screensaver. BIND_DREAM_SERVICE means
              only the system can start it. -->
