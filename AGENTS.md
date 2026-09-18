@@ -111,8 +111,9 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
 - `ScreenAdminReceiver.kt` + `res/xml/device_admin.xml`: device admin with the
   force-lock policy only, so the app can turn the screen off.
 - `ScreenControl.kt`: the two bits of screen behaviour the app may control. It
-  writes `screen_off_timeout` (when the screensaver starts), which needs both
-  the `WRITE_SETTINGS` declaration in the manifest **and** the user's grant:
+  writes `screen_off_timeout`, which with screensavers off is what switches the
+  screen off, and which needs both the `WRITE_SETTINGS` declaration in the
+  manifest **and** the user's grant:
   `Settings.System.canWrite()` is false without either. It also turns the screen
   off with `DevicePolicyManager.lockNow()` for the night rule, and holds the
   night-window arithmetic (which wraps past midnight), unit tested.
@@ -272,8 +273,9 @@ documents the API). Keep the two behaving the same.
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album
 (default 0 = all) and seconds per picture (default 30). Under "Screen": how long
-before the screensaver starts (0 leaves the system's value alone) and an opt-in
-"turn the screen off at night" with its hours (default 00:00 to 06:00, off).
+after the Portal last saw someone the screen switches off (0 leaves the system's
+value alone) and an opt-in "turn the screen off at night" with its hours
+(default 00:00 to 06:00, off).
 
 **Night screen off**. While the slideshow is on screen it checks every 30s (the
 first check 20s after it appears, so someone walking in has time to touch it)
@@ -301,15 +303,21 @@ settings reset the slideshow.
 - What an app **can** see: the effects. `SCREEN_ON`/`SCREEN_OFF` and
   `DREAMING_STARTED`/`DREAMING_STOPPED` broadcasts (register them in code, not
   in the manifest), and the light sensor.
-- **Timers:** after `screen_off_timeout` (system setting, 300000 ms) without
-  activity, the device starts the screensaver (dream). After `sleep_timeout`
-  (secure setting, 1200000 ms by default) since the last activity, including
-  presence, it goes to sleep. Both can be changed with
-  `adb shell settings put`.
+- **Timers:** `screen_off_timeout` (system setting) counts from the last user
+  activity, which includes the Portal reporting someone in the room. With a
+  screensaver enabled it only starts the screensaver, and the device then sleeps
+  after the secure `sleep_timeout` (1200000 ms), which only adb can write and
+  which the Portal resets. **So screensavers are off**
+  (`tools/setup-device.sh`): `screen_off_timeout` then switches the screen off
+  directly, and the app can set it from the Slideshow tab. Measured with a 15s
+  timeout: `Going to sleep due to timeout` about 15s after the last presence
+  report, then `Waking up from Dozing ... PresenceManager` at the next one.
 - **Portal's ambient mode** is a screensaver:
   `screensaver_components=com.facebook.alohaapps.launcher/com.facebook.aloha.app.home.touch.HomeDreamService`,
-  a windowless dream that starts the home activity. When presence wakes the
-  screen, the system starts dreaming, not the home activity.
+  a windowless dream that starts the home activity. Ours stays registered as the
+  screensaver component but screensavers are disabled, so waking resumes the
+  home activity instead. `SlideshowDreamService` is therefore unused on the
+  Portal, and kept for devices where screensavers make sense.
 - **Dark room clock:** the Portal launcher switches to a full-screen clock when
   the light sensor reads dark (`AmbientLightSensor: luxDark`). Covering the
   camera also covers the light sensor.
@@ -347,12 +355,14 @@ settings reset the slideshow.
   (disabling that app changes nothing). No setting controls it, so
   `tools/setup-device.sh` denies that package the overlay app-op and restarts
   it. That stops any other overlay from the same package too.
-- Waking the screen (presence, or the power key) starts the **screensaver**, not
-  the home activity, so the screensaver has to work for the Portal to show our
-  slideshow on wake. If it fails, the system resumes whatever activity was last
-  on screen, which can be the Portal's `HomeActivity` even when we hold the HOME
-  role. `adb logcat -d | grep -E 'DreamController|AndroidRuntime'` shows which
-  dream started and whether it died.
+- With screensavers enabled, waking the screen (presence, or the power key)
+  starts the **screensaver**, not the home activity, and a screensaver that
+  fails leaves whatever was on screen before, which can be the Portal's
+  `HomeActivity` even when we hold the HOME role. With them disabled the wake
+  goes straight to the home activity (the log still shows a momentary
+  `start dreaming...` followed by `Waking up from Dreaming`).
+  `adb logcat -d | grep -E 'PowerManagerService|DreamController'` shows the
+  whole path.
 
 ## Conventions and constraints
 

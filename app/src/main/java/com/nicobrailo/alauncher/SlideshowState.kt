@@ -72,7 +72,7 @@ class SlideshowState private constructor() {
         val newSettings = Settings.load(context)
         val old = settings
         settings = newSettings
-        ScreenControl.applyScreensaverDelay(context, newSettings)
+        ScreenControl.applyScreenOffDelay(context, newSettings)
 
         // Only the settings that decide which pictures are shown throw the
         // current ones away; changing the clock or the night hours shouldn't

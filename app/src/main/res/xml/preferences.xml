@@ -38,9 +38,9 @@
 
     <PreferenceCategory app:title="@string/settings_category_screen">
         <EditTextPreference
-            app:key="screensaver_minutes"
-            app:title="@string/settings_screensaver_minutes"
-            app:dialogMessage="@string/settings_screensaver_minutes_hint"
+            app:key="screen_off_minutes"
+            app:title="@string/settings_screen_off_minutes"
+            app:dialogMessage="@string/settings_screen_off_minutes_hint"
             app:defaultValue="0"
             app:useSimpleSummaryProvider="true" />
         <SwitchPreferenceCompat

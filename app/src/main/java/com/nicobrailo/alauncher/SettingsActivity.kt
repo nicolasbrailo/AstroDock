@@ -68,7 +68,7 @@ class SettingsActivity : AppCompatActivity() {
             numberPreference(Settings.KEY_MAX_PICTURES, Settings.MAX_PICTURES_RANGE)
             numberPreference(Settings.KEY_PERCENT, Settings.PERCENT_RANGE)
             numberPreference(Settings.KEY_SLIDE_SECONDS, Settings.SLIDE_SECONDS_RANGE)
-            numberPreference(Settings.KEY_SCREENSAVER_MINUTES, Settings.SCREENSAVER_MINUTES_RANGE)
+            numberPreference(Settings.KEY_SCREEN_OFF_MINUTES, Settings.SCREEN_OFF_MINUTES_RANGE)
             numberPreference(Settings.KEY_NIGHT_START_HOUR, Settings.HOUR_RANGE)
             numberPreference(Settings.KEY_NIGHT_END_HOUR, Settings.HOUR_RANGE)
         }
