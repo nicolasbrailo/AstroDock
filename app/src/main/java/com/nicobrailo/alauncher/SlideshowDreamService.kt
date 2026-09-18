@@ -37,6 +37,9 @@ class SlideshowDreamService : DreamService() {
         return super.dispatchTouchEvent(event)
     }
 
+    // R.layout.slideshow is shared with SlideshowActivity, but a dream has no
+    // AppCompat theme: it can only use framework attributes (?android:attr/...),
+    // and anything else fails to inflate and takes the screensaver down with it
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         setContentView(R.layout.slideshow)

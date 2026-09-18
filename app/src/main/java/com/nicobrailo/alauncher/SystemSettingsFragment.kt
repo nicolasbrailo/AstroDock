@@ -107,6 +107,15 @@ class SystemSettingsFragment : Fragment() {
                     Uri.parse("package:${context.packageName}")
                 ),
             ),
+            Item(
+                title = getString(R.string.system_media_title),
+                description = getString(R.string.system_media_description),
+                buttonText = getString(R.string.system_media_button),
+                done = AndroidSettings.Secure
+                    .getString(context.contentResolver, "enabled_notification_listeners")
+                    ?.contains(context.packageName) == true,
+                intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"),
+            ),
             // Not grantable: sleep_timeout is a secure setting, so only adb can
             // change it. Shown so its value is visible.
             Item(

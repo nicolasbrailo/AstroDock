@@ -60,4 +60,12 @@
     <string name="folder_drop_hint">Drop an app on another app to put them in a folder.</string>
     <string name="dialog_save">Save</string>
     <string name="dialog_cancel">Cancel</string>
+
+    <string name="media_play_pause">Play or pause</string>
+    <string name="media_next">Next</string>
+    <string name="media_previous">Previous</string>
+
+    <string name="system_media_title">Media controls</string>
+    <string name="system_media_description">Lets the slideshow show and control what other apps are playing, e.g. Jellyfin. Turn alauncher on in the list that opens.</string>
+    <string name="system_media_button">Open notification access</string>
 </resources>

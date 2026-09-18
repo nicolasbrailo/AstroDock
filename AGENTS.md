@@ -48,6 +48,16 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
 - `SettingsActivity.kt` + `res/layout/activity_settings.xml`: settings with two
   tabs. The Slideshow tab is the preferences in `res/xml/preferences.xml`, whose
   keys must match `Settings.KEY_*`.
+- `media/NowPlaying.kt` + `media/MediaListenerService.kt`: what another app is
+  playing, and the controls for it, through `MediaSessionManager`. Reading it
+  needs notification access, which is granted to the (otherwise empty)
+  notification listener service; without it the panel stays hidden.
+  Apps leave stale sessions behind: Jellyfin keeps one that claims to be playing
+  for days, and it ignores even the system's own pause. So a session claiming to
+  play is only believed while `AudioManager.isMusicActive` is true (or it plays
+  to another device), and such a session is skipped when choosing which one to
+  show. A paused session is shown for 15 minutes, so it can still be resumed.
+  Sound stopping isn't reported, so the panel is also re-checked every 5s.
 - `SystemSettingsFragment.kt`: the System tab. One item per thing the app needs
   from the system, with its state and a button that opens the system dialog.
   These intents must be started **for a result** (`systemDialog.launch`): the
@@ -66,6 +76,12 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   in `onAttachedToWindow()` leaves the window focusable, and it then swallows
   every touch, so the screensaver can't be dismissed and the device looks
   frozen. It also ends the screensaver itself in `dispatchTouchEvent`.
+  A dream has **no AppCompat theme**, so `res/layout/slideshow.xml` may only use
+  framework attributes (`?android:attr/...`). An AppCompat one like
+  `?attr/selectableItemBackgroundBorderless` inflates fine in the activity but
+  crashes the screensaver, and a crashed screensaver leaves whatever was
+  underneath on screen — which looks like the Portal launcher stealing the home
+  screen back.
 - `PortalState.kt`: what the Portal is doing, for the debug overlay. Tapping the
   clock shows it.
 - `SystemBars.kt`: hides the status and navigation bars. The system shows them
@@ -138,6 +154,12 @@ documents the API). Keep the two behaving the same.
   slot fetches its picture's metadata alongside the image, so the text is ready
   when the picture slides in; if the metadata can't be fetched, the line is
   hidden.
+- The bottom right corner shows what another app is playing (title, artist and
+  album, artwork when the app provides one) with previous, play/pause and next.
+  The screensaver shows the text but no buttons, since a touch ends it. Grant
+  notification access in the System tab, or with
+  `adb shell cmd notification allow_listener com.nicobrailo.alauncher/com.nicobrailo.alauncher.media.MediaListenerService`
+  (`disallow_listener` to revoke).
 - Errors are shown in a text overlay over the picture.
 - When the activity starts again, it reloads the settings. If they changed, it
   rebuilds the client and picker and clears the history. If not, it calls
@@ -206,6 +228,12 @@ documents the API). Keep the two behaving the same.
   (`ScreenAdminReceiver`) and `DevicePolicyManager.lockNow()`.
 - Declaring HOME means that, until the user picks a default home app, pressing
   Home shows a chooser between alauncher and the Portal launcher.
+- Waking the screen (presence, or the power key) starts the **screensaver**, not
+  the home activity, so the screensaver has to work for the Portal to show our
+  slideshow on wake. If it fails, the system resumes whatever activity was last
+  on screen, which can be the Portal's `HomeActivity` even when we hold the HOME
+  role. `adb logcat -d | grep -E 'DreamController|AndroidRuntime'` shows which
+  dream started and whether it died.
 
 ## Conventions and constraints
 

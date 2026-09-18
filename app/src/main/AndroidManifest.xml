@@ -68,6 +68,19 @@
             android:exported="false"
             android:theme="@style/Theme.Alauncher.Fullscreen" />
 
+        <!-- Holds the notification access permission, which is what lets the
+             slideshow read and control what other apps are playing. Only the
+             system can bind it. -->
+        <service
+            android:name=".media.MediaListenerService"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <!-- Turns the screen off; activated by the user in the system settings tab -->
         <receiver
             android:name=".ScreenAdminReceiver"

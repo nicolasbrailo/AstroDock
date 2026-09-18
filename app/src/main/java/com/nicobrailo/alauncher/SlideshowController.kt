@@ -12,6 +12,7 @@ import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.animation.DecelerateInterpolator
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import coil3.SingletonImageLoader
@@ -28,6 +29,7 @@ import com.nicobrailo.alauncher.immich.ImmichException
 import com.nicobrailo.alauncher.immich.ImmichPictureInfo
 import com.nicobrailo.alauncher.immich.ImmichPictureSize
 import com.nicobrailo.alauncher.immich.RandomAlbumPicker
+import com.nicobrailo.alauncher.media.NowPlaying
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -48,6 +50,9 @@ import kotlin.math.sign
 // - The bottom left corner shows the time and a line about the picture (year
 //   and place). Tapping that line expands it with more details. Tapping the
 //   clock shows what the Portal is doing (see PortalState).
+// - The bottom right corner shows what another app is playing, with controls,
+//   so the device can play music while the pictures keep going (see
+//   NowPlaying). It needs notification access, and stays hidden without it.
 //
 // The picture on screen (cur) and its neighbours (prev, next) each have their
 // own view, kept one screen width to either side, so a neighbour can slide in
@@ -102,6 +107,15 @@ class SlideshowController(
     private var picking = false
     private var timerJob: Job? = null
 
+    // What another app is playing. Only watched while the slideshow is visible.
+    private val nowPlayingPanel: View = root.findViewById(R.id.now_playing)
+    private val nowPlayingArt: ImageView = root.findViewById(R.id.now_playing_art)
+    private val nowPlayingTitle: TextView = root.findViewById(R.id.now_playing_title)
+    private val nowPlayingArtist: TextView = root.findViewById(R.id.now_playing_artist)
+    private val nowPlayingPlay: ImageButton = root.findViewById(R.id.now_playing_play)
+    private val nowPlaying = NowPlaying(context) { updateNowPlaying() }
+    private var nowPlayingJob: Job? = null
+
     // Shows what the Portal is doing, for debugging. Only while it's on screen.
     private val portalState = PortalState(context)
     private var portalStateJob: Job? = null
@@ -119,6 +133,9 @@ class SlideshowController(
             if (!dragging && pageAnimator == null) setOffset(0f)
         }
         if (interactive) {
+            nowPlayingPlay.setOnClickListener { nowPlaying.playPause() }
+            root.findViewById<View>(R.id.now_playing_next).setOnClickListener { nowPlaying.next() }
+            root.findViewById<View>(R.id.now_playing_previous).setOnClickListener { nowPlaying.previous() }
             pictureInfo.setOnClickListener {
                 infoExpanded = !infoExpanded
                 updatePictureInfo()
@@ -138,6 +155,16 @@ class SlideshowController(
             picker?.refresh()
         }
 
+        nowPlaying.start()
+        // Sound stopping isn't reported, so the panel is re-checked now and then
+        nowPlayingJob?.cancel()
+        nowPlayingJob = scope.launch {
+            while (true) {
+                updateNowPlaying()
+                delay(NOW_PLAYING_POLL_MILLIS)
+            }
+        }
+
         if (picker == null) return
         if (history.current == null) ensurePick()
         restartTimer()
@@ -147,6 +174,8 @@ class SlideshowController(
     // Called when it isn't visible any more. The pictures are kept, so coming
     // back shows the same one.
     fun stop() {
+        nowPlayingJob?.cancel()
+        nowPlaying.stop()
         timerJob?.cancel()
         portalStateJob?.cancel()
         portalState.stop()
@@ -312,6 +341,28 @@ class SlideshowController(
         pictureInfo.text = text
         pictureInfo.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
         pictureInfo.setBackgroundResource(if (infoExpanded) R.drawable.status_background else 0)
+    }
+
+    // The panel is only there while something is playing (or paused, so it can
+    // be resumed). The screensaver shows it but has no working buttons: a touch
+    // ends the screensaver instead.
+    private fun updateNowPlaying() {
+        val title = nowPlaying.title
+        if (!nowPlaying.hasActiveMedia || title == null) {
+            nowPlayingPanel.visibility = View.GONE
+            return
+        }
+        nowPlayingPanel.visibility = View.VISIBLE
+        nowPlayingTitle.text = title
+        val artist = listOfNotNull(nowPlaying.artist, nowPlaying.album).joinToString(" - ")
+        nowPlayingArtist.text = artist
+        nowPlayingArtist.visibility = if (artist.isEmpty()) View.GONE else View.VISIBLE
+        nowPlayingArt.setImageBitmap(nowPlaying.artwork)
+        nowPlayingArt.visibility = if (nowPlaying.artwork == null) View.GONE else View.VISIBLE
+        nowPlayingPlay.setImageResource(if (nowPlaying.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+        nowPlayingPlay.visibility = if (interactive) View.VISIBLE else View.GONE
+        root.findViewById<View>(R.id.now_playing_next).visibility = if (interactive) View.VISIBLE else View.GONE
+        root.findViewById<View>(R.id.now_playing_previous).visibility = if (interactive) View.VISIBLE else View.GONE
     }
 
     private fun showStatus(message: String) {
@@ -516,6 +567,7 @@ class SlideshowController(
         const val PAGE_DISTANCE_FRACTION = 0.25f
         const val FLING_VELOCITY_FACTOR = 4
         const val PAGE_ANIMATION_MS = 300L
+        const val NOW_PLAYING_POLL_MILLIS = 5000L
         // How much harder it is to drag when there is no picture to move to
         const val OVERSCROLL_RESISTANCE = 3f
     }
