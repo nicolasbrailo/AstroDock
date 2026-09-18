@@ -72,6 +72,27 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   the installer's confirmation: a keep-screen-on window flag is no use once
   another app is in front. It is released when the fragment is resumed again
   (installed or cancelled), and has a 10 minute timeout as a backstop.
+- `mqtt/StateReporter.kt`, `mqtt/MqttSettings.kt`, `mqtt/Occupancy.kt` +
+  `MqttSettingsFragment.kt`, `res/xml/mqtt_preferences.xml`: publishes what the
+  device is doing to an MQTT broker, on the topics of the homeboard bridge
+  (`~/src/homeboard/dbus-mqtt-bridge/README.md`): `state/bridge` (online record,
+  with the offline one preset as the last will, so a crash still reports),
+  `state/occupancy`, `state/slideshow_active` and `state/displayed_photo`. All
+  retained, QoS 0. The photo payload follows the field names the homeboard's photo
+  provider publishes (`albumname`, `albumpath`, `filename`, `local_path`,
+  `src_url`, `gps`, `reverse_geo`, `EXIF DateTimeOriginal`), so one renderer
+  reads either device. Immich has no albums on disk, so `albumname` is the
+  Immich album and the paths are the server's copy of the original;
+  `reverse_geo` holds the place names already in the picture's EXIF, and
+  nothing is looked up. `src_url` needs the API key to fetch. Nothing is subscribed yet; `cmd/...` is a later job.
+  Departures from the spec, both because this is a Portal: `distance_cm` is
+  never published (no mmWave sensor), and occupancy is a guess from the screen
+  (`Occupancy`), with a `source` field saying which. The slideshow runs in two
+  places and they hand over in either order, so each reports itself by name and
+  `slideshow_active` is true while either is showing. The topic prefix and the client id default
+  to the device's own name (`device_name`, e.g. `portalgo/`), sanitised for
+  topics: "alauncher" is the software, the unit is the Portal. Each device needs
+  its own prefix, or they overwrite each other's retained topics.
 - `SystemSettingsFragment.kt`: the System tab. One item per thing the app needs
   from the system, with its state and a button that opens the system dialog.
   These intents must be started **for a result** (`systemDialog.launch`): the

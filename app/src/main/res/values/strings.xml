@@ -103,4 +103,21 @@
     <string name="system_install_title">Install unknown apps</string>
     <string name="system_install_description">Lets alauncher install the apps offered in the Apps tab. The system still asks before each install.</string>
     <string name="system_install_button">Allow</string>
+
+    <string name="settings_tab_mqtt">MQTT</string>
+    <string name="mqtt_category_broker">Broker</string>
+    <string name="mqtt_enabled">Publish state to MQTT</string>
+    <string name="mqtt_enabled_summary">Reports what this device is doing: whether someone is around, whether the slideshow is running, and which picture is on screen.</string>
+    <string name="mqtt_host">Broker address</string>
+    <string name="mqtt_host_hint">Host name or IP of the MQTT broker, e.g. 10.0.0.10</string>
+    <string name="mqtt_port">Port</string>
+    <string name="mqtt_user">User</string>
+    <string name="mqtt_user_hint">Leave empty if the broker needs no login</string>
+    <string name="mqtt_password">Password</string>
+    <string name="mqtt_category_topics">Topics</string>
+    <string name="mqtt_topic_prefix">Topic prefix</string>
+    <string name="mqtt_topic_prefix_hint">Everything is published under this prefix. A trailing / is added if missing. Empty means this device\'s name. Give each device its own prefix, or they overwrite each other.</string>
+    <string name="mqtt_client_id">Client ID</string>
+    <string name="mqtt_client_id_hint">How this device identifies itself to the broker. Empty means this device\'s name.</string>
+    <string name="mqtt_topics">Published topics</string>
 </resources>

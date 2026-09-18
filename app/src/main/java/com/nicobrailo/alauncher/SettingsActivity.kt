@@ -27,7 +27,8 @@ class SettingsActivity : AppCompatActivity() {
             override fun createFragment(position: Int): Fragment = when (position) {
                 0 -> SlideshowSettingsFragment()
                 1 -> SystemSettingsFragment()
-                else -> InstallAppsFragment()
+                2 -> InstallAppsFragment()
+                else -> MqttSettingsFragment()
             }
         }
         TabLayoutMediator(findViewById<TabLayout>(R.id.tabs), pager) { tab, position ->
@@ -40,6 +41,7 @@ class SettingsActivity : AppCompatActivity() {
             R.string.settings_tab_slideshow,
             R.string.settings_tab_system,
             R.string.settings_tab_apps,
+            R.string.settings_tab_mqtt,
         )
     }
 

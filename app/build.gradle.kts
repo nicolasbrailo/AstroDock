@@ -49,6 +49,7 @@ dependencies {
     implementation(libs.androidx.viewpager2)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.okhttp)
+    implementation(libs.paho.mqtt)
     implementation(libs.coil)
     implementation(libs.coil.network.okhttp)
     testImplementation(libs.junit)

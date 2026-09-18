@@ -29,6 +29,7 @@ import com.nicobrailo.alauncher.immich.ImmichClient
 import com.nicobrailo.alauncher.immich.ImmichPictureInfo
 import com.nicobrailo.alauncher.immich.ImmichPictureSize
 import com.nicobrailo.alauncher.media.NowPlaying
+import com.nicobrailo.alauncher.mqtt.StateReporter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -110,6 +111,13 @@ class SlideshowController(
     private val nowPlaying = NowPlaying(context) { updateNowPlaying() }
     private var nowPlayingJob: Job? = null
 
+    // Publishes what this device is doing to an MQTT broker, when that's set up
+    private val reporter = StateReporter.get(context)
+    private val reporterSource = if (interactive) "home" else "screensaver"
+    // What was last reported, so the same picture isn't republished every time
+    // the overlay is redrawn
+    private var reportedPhoto: String? = null
+
     // Shows what the Portal is doing, for debugging. Only while it's on screen.
     private val portalState = PortalState(context)
     private var portalStateJob: Job? = null
@@ -149,6 +157,10 @@ class SlideshowController(
             setOffset(0f)
         }
 
+        // Settings may have been edited in the MQTT tab meanwhile
+        reporter.applySettings()
+        reporter.onSlideshowVisible(reporterSource, true)
+
         nowPlaying.start()
         // Sound stopping isn't reported, so the panel is re-checked now and then
         nowPlayingJob?.cancel()
@@ -175,6 +187,7 @@ class SlideshowController(
     // Called when it isn't visible any more. The pictures are kept, so coming
     // back shows the same one.
     fun stop() {
+        reporter.onSlideshowVisible(reporterSource, false)
         nightJob?.cancel()
         nowPlayingJob?.cancel()
         nowPlaying.stop()
@@ -296,6 +309,7 @@ class SlideshowController(
     private fun updatePictureInfo() {
         val picture = cur.picture
         val info = cur.info
+        reportPhoto(picture, info)
         val text = when {
             picture == null || info == null -> ""
             state.infoExpanded -> pictureDetails(picture, info)
@@ -326,6 +340,18 @@ class SlideshowController(
         nowPlayingPlay.visibility = if (interactive) View.VISIBLE else View.GONE
         root.findViewById<View>(R.id.now_playing_next).visibility = if (interactive) View.VISIBLE else View.GONE
         root.findViewById<View>(R.id.now_playing_previous).visibility = if (interactive) View.VISIBLE else View.GONE
+    }
+
+    // Tells the reporter which picture is on screen, once when it appears and
+    // again when its metadata arrives
+    private fun reportPhoto(picture: AlbumPicture?, info: ImmichPictureInfo?) {
+        if (picture == null) return
+        val key = "${picture.id}:${info != null}"
+        if (key == reportedPhoto) return
+        reportedPhoto = key
+        // Needs the API key to fetch, but it says which picture this is
+        val url = runCatching { state.client?.pictureUrl(picture.id, ImmichPictureSize.PREVIEW) }.getOrNull()
+        reporter.onPhotoShown(picture.id, picture.album.name, url, info)
     }
 
     private fun showStatus(message: String) {
