@@ -1,32 +1,65 @@
 package com.nicobrailo.alauncher
 
-import android.content.ActivityNotFoundException
-import android.content.ComponentName
+import android.content.ClipData
 import android.content.Intent
-import android.graphics.drawable.Drawable
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import android.view.DragEvent
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.ImageView
+import android.widget.PopupMenu
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import kotlinx.coroutines.Dispatchers
+import com.nicobrailo.alauncher.apps.Folder
+import com.nicobrailo.alauncher.apps.FolderOps
+import com.nicobrailo.alauncher.apps.FolderStore
+import com.nicobrailo.alauncher.apps.LauncherApp
+import com.nicobrailo.alauncher.apps.LauncherModel
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.util.UUID
 
-// Grid of the installed apps (anything with a launcher icon, except this app).
-// Tapping one launches it; the button in the corner opens SettingsActivity.
-// Opened by tapping the slideshow. It closes when an app is launched, so
-// coming back lands on the slideshow.
+// Grid of the installed apps and the folders they're grouped into. Tapping an
+// app launches it and closes the list, so coming back lands on the slideshow.
+// Tapping a folder opens it. The button in the corner opens SettingsActivity.
+//
+// Long-pressing an item picks it up:
+//  - Dropping it on another app puts both in a new folder; dropping it on a
+//    folder adds it to that folder.
+//  - Letting go without moving shows a menu instead (app info, uninstall, or
+//    renaming and ungrouping a folder).
 class AppListActivity : AppCompatActivity() {
-    private data class App(val label: String, val component: ComponentName, val icon: Drawable)
+    // What the grid shows: an app on its own, or a folder of apps
+    private sealed interface Entry {
+        val label: String
+    }
 
-    private val adapter = AppAdapter()
+    private data class AppItem(val app: LauncherApp) : Entry {
+        override val label get() = app.label
+    }
+
+    private data class FolderItem(val folder: Folder, val apps: List<LauncherApp>) : Entry {
+        override val label get() = folder.name
+    }
+
+    private lateinit var model: LauncherModel
+    private lateinit var folderStore: FolderStore
+    private val adapter = EntryAdapter()
+
+    private var apps: List<LauncherApp> = emptyList()
+    private var folders: List<Folder> = emptyList()
+
+    // The item being dragged, and whether the drag ever left it. A drag that
+    // never moved is a long-press, and opens the menu instead.
+    private var dragged: Entry? = null
+    private var dragMoved = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,11 +70,15 @@ class AppListActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
 
-        val apps = findViewById<RecyclerView>(R.id.apps)
-        val columnWidthPx = resources.displayMetrics.density * COLUMN_WIDTH_DP
-        val columns = (resources.displayMetrics.widthPixels / columnWidthPx).toInt().coerceAtLeast(1)
-        apps.layoutManager = GridLayoutManager(this, columns)
-        apps.adapter = adapter
+        model = LauncherModel(this) { refresh() }
+        folderStore = FolderStore(this)
+
+        val grid = findViewById<RecyclerView>(R.id.apps)
+        grid.layoutManager = GridLayoutManager(this, columns())
+        grid.adapter = adapter
+        // Dropping on empty space does nothing, but the drag has to be accepted
+        // here or it ends as soon as it leaves an item
+        grid.setOnDragListener { _, event -> event.action != DragEvent.ACTION_DROP }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -51,8 +88,15 @@ class AppListActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        // Reloaded every time, so installed and removed apps show up
-        lifecycleScope.launch { adapter.submit(loadApps()) }
+        // LauncherModel reports later changes; this catches anything that
+        // happened while the list was closed
+        model.start()
+        refresh()
+    }
+
+    override fun onStop() {
+        model.stop()
+        super.onStop()
     }
 
     override fun finish() {
@@ -61,69 +105,256 @@ class AppListActivity : AppCompatActivity() {
         overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)
     }
 
-    // Loading labels and icons reads every app's resources, so not on the main thread
-    private suspend fun loadApps(): List<App> = withContext(Dispatchers.Default) {
-        val pm = packageManager
-        val query = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        pm.queryIntentActivities(query, 0)
-            .filter { it.activityInfo.packageName != packageName }
-            .map {
-                val info = it.activityInfo
-                App(
-                    label = it.loadLabel(pm).toString(),
-                    component = ComponentName(info.packageName, info.name),
-                    icon = it.loadIcon(pm),
-                )
-            }
-            .sortedBy { it.label.lowercase() }
+    private fun columns(): Int {
+        val columnWidthPx = resources.displayMetrics.density * COLUMN_WIDTH_DP
+        return (resources.displayMetrics.widthPixels / columnWidthPx).toInt().coerceAtLeast(1)
     }
 
-    private fun launch(app: App) {
-        val intent = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setComponent(app.component)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+    private fun refresh() {
+        lifecycleScope.launch {
+            apps = model.apps()
+            // Apps uninstalled while we weren't looking leave their folders
+            val pruned = FolderOps.forApps(folderStore.load(), apps.map { it.key }.toSet())
+            updateFolders(pruned, save = pruned != folders)
+        }
+    }
+
+    private fun updateFolders(newFolders: List<Folder>, save: Boolean = true) {
+        folders = newFolders
+        if (save) folderStore.save(newFolders)
+
+        val byKey = apps.associateBy { it.key }
+        val folderItems = folders.map { folder -> FolderItem(folder, folder.appKeys.mapNotNull(byKey::get)) }
+        val grouped = folders.flatMap { it.appKeys }.toSet()
+        val loose = apps.filterNot { it.key in grouped }.map { AppItem(it) }
+        adapter.submit((folderItems + loose).sortedBy { it.label.lowercase() })
+    }
+
+    // ---- Opening things ----------------------------------------------------
+
+    private fun launch(app: LauncherApp) {
         try {
-            startActivity(intent)
+            model.launch(app)
             finish()
-        } catch (e: ActivityNotFoundException) {
-            // Uninstalled since the list was loaded
-            Log.w(TAG, "Can't launch ${app.component}", e)
-            lifecycleScope.launch { adapter.submit(loadApps()) }
         } catch (e: SecurityException) {
+            // Uninstalled since the list was built, or not launchable any more
             Log.w(TAG, "Can't launch ${app.component}", e)
+            refresh()
+        } catch (e: IllegalStateException) {
+            Log.w(TAG, "Can't launch ${app.component}", e)
+            refresh()
         }
     }
 
-    private inner class AppAdapter : RecyclerView.Adapter<AppAdapter.Holder>() {
-        private var apps: List<App> = emptyList()
+    private fun openFolder(item: FolderItem) {
+        val view = layoutInflater.inflate(R.layout.dialog_folder, null) as RecyclerView
+        val contents = EntryAdapter()
+        view.layoutManager = GridLayoutManager(this, columns().coerceAtMost(4))
+        view.adapter = contents
+        contents.submit(item.apps.map { AppItem(it) })
 
-        inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
-            val icon: ImageView = view.findViewById(R.id.icon)
-            val label: TextView = view.findViewById(R.id.label)
+        val dialog = AlertDialog.Builder(this, R.style.Theme_Alauncher_Dialog)
+            .setTitle(item.folder.name)
+            .setView(view)
+            .show()
+        contents.onClick = { entry ->
+            dialog.dismiss()
+            launch((entry as AppItem).app)
         }
+        // Inside a folder the menu can also take an app out of it
+        contents.onLongPress = { entry, anchor ->
+            appMenu(anchor, (entry as AppItem).app, insideFolder = true) { dialog.dismiss() }
+        }
+    }
+
+    // ---- Menus -------------------------------------------------------------
+
+    private fun showMenu(entry: Entry, anchor: View) {
+        when (entry) {
+            is AppItem -> appMenu(anchor, entry.app, insideFolder = false) {}
+            is FolderItem -> folderMenu(anchor, entry.folder)
+        }
+    }
+
+    private fun appMenu(anchor: View, app: LauncherApp, insideFolder: Boolean, onChanged: () -> Unit) {
+        val menu = PopupMenu(this, anchor)
+        menu.menu.add(R.string.app_menu_app_info).setOnMenuItemClickListener {
+            model.showAppInfo(app)
+            onChanged()
+            true
+        }
+        // System apps can't be uninstalled, and another profile's apps can only
+        // be uninstalled from inside that profile
+        if (!app.isSystem && app.isOwnProfile) {
+            menu.menu.add(R.string.app_menu_uninstall).setOnMenuItemClickListener {
+                val uri = Uri.parse("package:${app.component.packageName}")
+                startActivity(Intent(Intent.ACTION_DELETE, uri))
+                onChanged()
+                true
+            }
+        }
+        if (insideFolder) {
+            menu.menu.add(R.string.app_menu_remove_from_folder).setOnMenuItemClickListener {
+                updateFolders(FolderOps.removeApp(folders, app.key))
+                onChanged()
+                true
+            }
+        }
+        menu.show()
+    }
+
+    private fun folderMenu(anchor: View, folder: Folder) {
+        val menu = PopupMenu(this, anchor)
+        menu.menu.add(R.string.folder_menu_rename).setOnMenuItemClickListener {
+            renameFolder(folder)
+            true
+        }
+        menu.menu.add(R.string.folder_menu_ungroup).setOnMenuItemClickListener {
+            updateFolders(FolderOps.delete(folders, folder.id))
+            true
+        }
+        menu.show()
+    }
+
+    private fun renameFolder(folder: Folder) {
+        val input = EditText(this).apply {
+            setText(folder.name)
+            setSelection(folder.name.length)
+        }
+        AlertDialog.Builder(this, R.style.Theme_Alauncher_Dialog)
+            .setTitle(R.string.folder_rename_title)
+            .setView(input)
+            .setPositiveButton(R.string.dialog_save) { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isNotEmpty()) updateFolders(FolderOps.rename(folders, folder.id, name))
+            }
+            .setNegativeButton(R.string.dialog_cancel, null)
+            .show()
+    }
+
+    // ---- Dragging ----------------------------------------------------------
+
+    private fun startDrag(entry: Entry, view: View) {
+        dragged = entry
+        dragMoved = false
+        val data = ClipData.newPlainText("alauncher-entry", entry.label)
+        view.startDragAndDrop(data, View.DragShadowBuilder(view), null, View.DRAG_FLAG_OPAQUE)
+    }
+
+    // Handles a drag over one item of the grid. Returns whether the event was
+    // consumed, which is what a drag listener must report.
+    private fun onDrag(target: Entry, view: View, event: DragEvent): Boolean {
+        val source = dragged ?: return false
+        val onSelf = target == source
+        when (event.action) {
+            DragEvent.ACTION_DRAG_ENTERED -> {
+                if (!onSelf) {
+                    dragMoved = true
+                    view.alpha = HIGHLIGHT_ALPHA
+                }
+            }
+
+            DragEvent.ACTION_DRAG_EXITED -> view.alpha = 1f
+
+            DragEvent.ACTION_DROP -> {
+                view.alpha = 1f
+                if (!onSelf) drop(source, target)
+            }
+
+            DragEvent.ACTION_DRAG_ENDED -> {
+                view.alpha = 1f
+                // A long-press that never went anywhere: show the menu instead
+                if (onSelf && !dragMoved) showMenu(source, view)
+                if (onSelf) dragged = null
+            }
+        }
+        return true
+    }
+
+    // What dropping one item on another means
+    private fun drop(source: Entry, target: Entry) {
+        when {
+            // Two apps make a new folder
+            source is AppItem && target is AppItem -> updateFolders(
+                FolderOps.create(
+                    folders,
+                    UUID.randomUUID().toString(),
+                    getString(R.string.folder_default_name),
+                    target.app.key,
+                    source.app.key,
+                )
+            )
+            // An app dropped on a folder joins it
+            source is AppItem && target is FolderItem ->
+                updateFolders(FolderOps.addApp(folders, target.folder.id, source.app.key))
+            // Dragging folders around isn't supported
+            else -> Unit
+        }
+    }
+
+    // ---- The grid ----------------------------------------------------------
+
+    private inner class EntryAdapter : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+        private var entries: List<Entry> = emptyList()
+
+        // Replaced inside a folder, where tapping and long-pressing differ
+        var onClick: (Entry) -> Unit = { entry ->
+            when (entry) {
+                is AppItem -> launch(entry.app)
+                is FolderItem -> openFolder(entry)
+            }
+        }
+        var onLongPress: ((Entry, View) -> Unit)? = null
 
         @Suppress("NotifyDataSetChanged") // The whole list is replaced, and it's small
-        fun submit(newApps: List<App>) {
-            apps = newApps
+        fun submit(newEntries: List<Entry>) {
+            entries = newEntries
             notifyDataSetChanged()
         }
 
-        override fun getItemCount() = apps.size
+        override fun getItemCount() = entries.size
 
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) =
-            Holder(LayoutInflater.from(parent.context).inflate(R.layout.item_app, parent, false))
+        override fun getItemViewType(position: Int) =
+            if (entries[position] is FolderItem) TYPE_FOLDER else TYPE_APP
 
-        override fun onBindViewHolder(holder: Holder, position: Int) {
-            val app = apps[position]
-            holder.icon.setImageDrawable(app.icon)
-            holder.label.text = app.label
-            holder.itemView.setOnClickListener { launch(app) }
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+            val layout = if (viewType == TYPE_FOLDER) R.layout.item_folder else R.layout.item_app
+            val view = LayoutInflater.from(parent.context).inflate(layout, parent, false)
+            return object : RecyclerView.ViewHolder(view) {}
+        }
+
+        override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            val entry = entries[position]
+            val view = holder.itemView
+            view.findViewById<TextView>(R.id.label).text = entry.label
+            when (entry) {
+                is AppItem -> view.findViewById<ImageView>(R.id.icon).setImageDrawable(entry.app.icon)
+                is FolderItem -> {
+                    val previews = listOf(R.id.icon1, R.id.icon2, R.id.icon3, R.id.icon4)
+                    for ((i, id) in previews.withIndex()) {
+                        view.findViewById<ImageView>(id).setImageDrawable(entry.apps.getOrNull(i)?.icon)
+                    }
+                }
+            }
+
+            view.setOnClickListener { onClick(entry) }
+            view.setOnLongClickListener {
+                val longPress = onLongPress
+                if (longPress != null) longPress(entry, view) else startDrag(entry, view)
+                true
+            }
+            // Only the main grid rearranges things
+            view.setOnDragListener(
+                if (onLongPress == null) View.OnDragListener { v, event -> onDrag(entry, v, event) } else null
+            )
         }
     }
 
     private companion object {
         const val TAG = "AppListActivity"
         const val COLUMN_WIDTH_DP = 140
+        const val TYPE_APP = 0
+        const val TYPE_FOLDER = 1
+        const val HIGHLIGHT_ALPHA = 0.4f
     }
 }

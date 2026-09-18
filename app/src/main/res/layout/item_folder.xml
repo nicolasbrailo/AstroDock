@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A folder in AppListActivity's grid: the first four icons in a 2x2 preview -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="?attr/selectableItemBackground"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <GridLayout
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:background="@drawable/folder_background"
+        android:columnCount="2"
+        android:padding="6dp"
+        android:rowCount="2">
+
+        <ImageView
+            android:id="@+id/icon1"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_margin="1dp"
+            android:contentDescription="@null" />
+
+        <ImageView
+            android:id="@+id/icon2"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_margin="1dp"
+            android:contentDescription="@null" />
+
+        <ImageView
+            android:id="@+id/icon3"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_margin="1dp"
+            android:contentDescription="@null" />
+
+        <ImageView
+            android:id="@+id/icon4"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_margin="1dp"
+            android:contentDescription="@null" />
+    </GridLayout>
+
+    <TextView
+        android:id="@+id/label"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:ellipsize="end"
+        android:gravity="center_horizontal"
+        android:maxLines="2"
+        android:textColor="@android:color/white"
+        android:textSize="16sp" />
+</LinearLayout>

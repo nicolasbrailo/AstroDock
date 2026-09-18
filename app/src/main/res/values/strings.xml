@@ -49,4 +49,15 @@
 
     <string name="system_sleep_timeout_title">Screen off delay: %1$s</string>
     <string name="system_sleep_timeout_description">How long the Portal waits after it last saw someone before turning the screen off. This one can only be changed over adb:\n\nadb shell settings put secure sleep_timeout 120000</string>
+
+    <string name="app_menu_app_info">App info</string>
+    <string name="app_menu_uninstall">Uninstall</string>
+    <string name="app_menu_remove_from_folder">Take out of folder</string>
+    <string name="folder_menu_rename">Rename folder</string>
+    <string name="folder_menu_ungroup">Ungroup folder</string>
+    <string name="folder_default_name">Folder</string>
+    <string name="folder_rename_title">Folder name</string>
+    <string name="folder_drop_hint">Drop an app on another app to put them in a folder.</string>
+    <string name="dialog_save">Save</string>
+    <string name="dialog_cancel">Cancel</string>
 </resources>

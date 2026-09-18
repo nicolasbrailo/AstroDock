@@ -71,8 +71,18 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
 - `SystemBars.kt`: hides the status and navigation bars. The system shows them
   again whenever a window loses focus, so activities call `hideSystemBars()`
   from `onWindowFocusChanged`, not only at startup.
-- `AppListActivity.kt` + `res/layout/activity_app_list.xml`, `item_app.xml`:
-  grid of launchable apps, and the settings button.
+- `AppListActivity.kt` + `res/layout/activity_app_list.xml`, `item_app.xml`,
+  `item_folder.xml`, `dialog_folder.xml`: grid of apps and folders, the
+  long-press menu, drag and drop, and the settings button.
+- `apps/LauncherModel.kt`: the installed apps, through `LauncherApps` rather
+  than `queryIntentActivities`, so other profiles are included, icons carry the
+  profile badge, and the system reports installs and removals while the list is
+  open. It also launches apps and opens their app info.
+- `apps/Folders.kt`: the folder rules as pure functions (`FolderOps`), so they
+  can be unit tested. An app is in at most one folder, and a folder with fewer
+  than two apps dissolves.
+- `apps/FolderStore.kt`: saves the folders as JSON in their own
+  SharedPreferences file.
 
 Unit tests are in `app/src/test/`. `android.util.Log` is a no-op there
 (`unitTests.isReturnDefaultValues`), and `org.json` is a stub, so code that
@@ -143,6 +153,12 @@ documents the API). Keep the two behaving the same.
   the app returns to the slideshow.
 - The gear button (top right) opens `SettingsActivity`, which is the only way to
   reach the settings on the device.
+- Long-pressing an item starts a drag. Dropping an app on another app makes a
+  folder; dropping it on a folder adds it. A long-press that never moves shows a
+  menu instead: app info and uninstall for an app (hidden for system apps and
+  other profiles), rename and ungroup for a folder. Inside an open folder, the
+  menu can also take an app out.
+- Entries are sorted by name; there's no manual ordering.
 
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album

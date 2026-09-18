@@ -18,4 +18,11 @@
     <style name="Theme.Alauncher.Fullscreen" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
     </style>
+
+    <!-- Dark dialogs, so the white app labels in a folder stay readable -->
+    <style name="Theme.Alauncher.Dialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
+        <item name="android:background">#FF202020</item>
+        <item name="android:textColorPrimary">@android:color/white</item>
+        <item name="android:textColorSecondary">#FFCCCCCC</item>
+    </style>
 </resources>
