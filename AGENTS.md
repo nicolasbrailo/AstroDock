@@ -228,6 +228,11 @@ documents the API). Keep the two behaving the same.
   (`ScreenAdminReceiver`) and `DevicePolicyManager.lockNow()`.
 - Declaring HOME means that, until the user picks a default home app, pressing
   Home shows a chooser between alauncher and the Portal launcher.
+- The floating bug-report pill is an overlay window (`BugnubPillViewService`)
+  drawn by `com.facebook.aloha.system.services`, not by the bug-reporter app
+  (disabling that app changes nothing). No setting controls it;
+  `tools/setup-device.sh bugnub off` denies that package the overlay app-op and
+  restarts it. That stops any other overlay from the same package too.
 - Waking the screen (presence, or the power key) starts the **screensaver**, not
   the home activity, so the screensaver has to work for the Portal to show our
   slideshow on wake. If it fails, the system resumes whatever activity was last
