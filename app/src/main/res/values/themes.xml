@@ -17,6 +17,14 @@
     <!-- Slideshow: no action bar, black behind the pictures -->
     <style name="Theme.Alauncher.Fullscreen" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
+        <!-- The window is created full screen, rather than hiding the bars once
+             it is already on screen: the system clears those flags whenever a
+             window loses focus, so the Portal's status bar used to flash in
+             (and resize the picture) every time the screensaver handed over. -->
+        <item name="android:windowFullscreen">true</item>
+        <!-- No open or close animation. The screensaver and the home screen show
+             the same picture, so the swap between them should be invisible. -->
+        <item name="android:windowAnimationStyle">@null</item>
     </style>
 
     <!-- Dark dialogs, so the white app labels in a folder stay readable -->

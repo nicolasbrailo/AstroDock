@@ -3,6 +3,7 @@ package com.nicobrailo.alauncher
 import android.service.dreams.DreamService
 import android.view.MotionEvent
 import android.view.View
+import androidx.core.view.WindowCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,6 +45,9 @@ class SlideshowDreamService : DreamService() {
     // and anything else fails to inflate and takes the screensaver down with it
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        // Same layout rules as the home screen's window, so the picture is in
+        // exactly the same place in both and the handover doesn't shift it
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         setContentView(R.layout.slideshow)
 
         val root = findViewById<View>(R.id.root)

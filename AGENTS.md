@@ -113,7 +113,13 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   clock shows it.
 - `SystemBars.kt`: hides the status and navigation bars. The system shows them
   again whenever a window loses focus, so activities call `hideSystemBars()`
-  from `onWindowFocusChanged`, not only at startup.
+  from `onWindowFocusChanged`, not only at startup. It also lays the content out
+  at full size regardless of the bars (`setDecorFitsSystemWindows(false)`, and
+  the screensaver does the same), so a bar that appears for a moment doesn't
+  shrink and shift the picture. `Theme.Alauncher.Fullscreen` asks for a full
+  screen window up front and turns the window animation off: hiding the bars in
+  code alone made the Portal's status bar flash in every time the screensaver
+  handed over to the home screen.
 - `AppListActivity.kt` + `res/layout/activity_app_list.xml`, `item_app.xml`,
   `item_folder.xml`, `dialog_folder.xml`: grid of apps and folders, the
   long-press menu, drag and drop, and the settings button.
