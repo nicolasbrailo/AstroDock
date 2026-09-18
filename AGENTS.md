@@ -78,7 +78,18 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   (`~/src/homeboard/dbus-mqtt-bridge/README.md`): `state/bridge` (online record,
   with the offline one preset as the last will, so a crash still reports),
   `state/occupancy`, `state/slideshow_active` and `state/displayed_photo`. All
-  retained, QoS 0. The photo payload follows the field names the homeboard's photo
+  retained, QoS 0. It also subscribes to `<prefix>cmd/#` and carries out the
+  commands that mean something here (`mqtt/Command.kt`): `ambience/next`,
+  `ambience/prev`, `ambience/set_transition_time_secs` (`{"secs":n}`, saved as
+  the slideshow setting) and `ambience/announce` (`{"timeout":n,"msg":"..."}`,
+  shown over the pictures; timeout 0 stays up, an empty message clears it) go to
+  whichever slideshow is on screen, while `presence/force_on` (a wake lock, 30
+  min) and `presence/force_off` (device admin lock, so it needs "Turn the screen
+  off" from the System tab) are handled by the reporter itself, because they
+  must work with nothing on screen. The homeboard's renderer commands
+  (`set_svg_overlay`, `set_render_config`, `set_embed_qr`, `set_target_size`)
+  are logged and dropped. Retained commands are ignored: they arrive again on
+  every reconnect, and acting on them would replay an old command. The photo payload follows the field names the homeboard's photo
   provider publishes (`albumname`, `albumpath`, `filename`, `local_path`,
   `src_url`, `gps`, `reverse_geo`, `EXIF DateTimeOriginal`), so one renderer
   reads either device. Immich has no albums on disk, so `albumname` is the

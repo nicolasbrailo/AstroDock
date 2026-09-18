@@ -68,6 +68,35 @@ object ScreenControl {
         if (lock?.isHeld == true) lock.release()
     }
 
+    // Wakes the screen and holds it on, for the MQTT force_on command. The
+    // Portal's own timeouts take over again when this is released or expires.
+    @Suppress("DEPRECATION") // Deprecated, but it is how an app wakes the screen
+    fun forceScreenOn(context: Context, timeoutMillis: Long) {
+        val power = context.getSystemService(PowerManager::class.java) ?: return
+        release(forcedOn)
+        forcedOn = try {
+            power.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "alauncher:force_on",
+            ).apply {
+                setReferenceCounted(false)
+                acquire(timeoutMillis)
+                Log.i(TAG, "Screen forced on")
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Can't force the screen on", e)
+            null
+        }
+    }
+
+    fun releaseForcedOn() {
+        release(forcedOn)
+        forcedOn = null
+    }
+
+    // Held by forceScreenOn, so force_off can let go of it again
+    private var forcedOn: PowerManager.WakeLock? = null
+
     // True once the user has activated the device admin in the System tab
     fun canTurnScreenOff(context: Context): Boolean {
         val dpm = context.getSystemService(DevicePolicyManager::class.java)

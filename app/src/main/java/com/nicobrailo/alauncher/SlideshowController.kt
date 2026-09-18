@@ -29,6 +29,8 @@ import com.nicobrailo.alauncher.immich.ImmichClient
 import com.nicobrailo.alauncher.immich.ImmichPictureInfo
 import com.nicobrailo.alauncher.immich.ImmichPictureSize
 import com.nicobrailo.alauncher.media.NowPlaying
+import androidx.preference.PreferenceManager
+import com.nicobrailo.alauncher.mqtt.Command
 import com.nicobrailo.alauncher.mqtt.StateReporter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -114,6 +116,9 @@ class SlideshowController(
     // Publishes what this device is doing to an MQTT broker, when that's set up
     private val reporter = StateReporter.get(context)
     private val reporterSource = if (interactive) "home" else "screensaver"
+    private val announcement: TextView = root.findViewById(R.id.announcement)
+    private var announcementJob: Job? = null
+    private val onCommand: (Command) -> Unit = { carryOut(it) }
     // What was last reported, so the same picture isn't republished every time
     // the overlay is redrawn
     private var reportedPhoto: String? = null
@@ -160,6 +165,8 @@ class SlideshowController(
         // Settings may have been edited in the MQTT tab meanwhile
         reporter.applySettings()
         reporter.onSlideshowVisible(reporterSource, true)
+        // Commands go to whichever slideshow is on screen
+        reporter.setCommandListener(onCommand)
 
         nowPlaying.start()
         // Sound stopping isn't reported, so the panel is re-checked now and then
@@ -188,6 +195,7 @@ class SlideshowController(
     // back shows the same one.
     fun stop() {
         reporter.onSlideshowVisible(reporterSource, false)
+        reporter.clearCommandListener(onCommand)
         nightJob?.cancel()
         nowPlayingJob?.cancel()
         nowPlaying.stop()
@@ -340,6 +348,55 @@ class SlideshowController(
         nowPlayingPlay.visibility = if (interactive) View.VISIBLE else View.GONE
         root.findViewById<View>(R.id.now_playing_next).visibility = if (interactive) View.VISIBLE else View.GONE
         root.findViewById<View>(R.id.now_playing_previous).visibility = if (interactive) View.VISIBLE else View.GONE
+    }
+
+    // ---- Commands from MQTT -----------------------------------------------
+
+    // Runs on the main thread. The screen commands are handled by the reporter;
+    // these are the ones that belong to the slideshow.
+    private fun carryOut(command: Command) {
+        when (command) {
+            Command.Next -> {
+                onTimer()
+                restartTimer()
+            }
+            Command.Previous -> {
+                if (prev.ready) animateOffset(root.width.toFloat()) { pageBack() }
+                restartTimer()
+            }
+            is Command.TransitionSeconds -> setTransitionSeconds(command.seconds)
+            is Command.Announce -> announce(command.message, command.timeoutSeconds)
+            else -> Unit // Screen commands: the reporter deals with those
+        }
+    }
+
+    // Changes the setting, so it sticks and the settings screen agrees
+    private fun setTransitionSeconds(seconds: Int) {
+        PreferenceManager.getDefaultSharedPreferences(context)
+            .edit()
+            .putString(Settings.KEY_SLIDE_SECONDS, seconds.toString())
+            .apply()
+        state.reloadSettings(context)
+        restartTimer()
+        Log.i(TAG, "Now ${seconds}s per picture")
+    }
+
+    // Shows a message over the pictures. An empty message clears it, and a
+    // timeout of 0 leaves it up until something else replaces it.
+    private fun announce(message: String, timeoutSeconds: Int) {
+        announcementJob?.cancel()
+        if (message.isBlank()) {
+            announcement.visibility = View.GONE
+            return
+        }
+        announcement.text = message
+        announcement.visibility = View.VISIBLE
+        if (timeoutSeconds > 0) {
+            announcementJob = scope.launch {
+                delay(timeoutSeconds * 1000L)
+                announcement.visibility = View.GONE
+            }
+        }
     }
 
     // Tells the reporter which picture is on screen, once when it appears and

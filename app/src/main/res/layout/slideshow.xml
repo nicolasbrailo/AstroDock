@@ -159,6 +159,21 @@
             android:src="@drawable/ic_skip_next" />
     </LinearLayout>
 
+    <!-- A message sent over MQTT (cmd/ambience/announce) -->
+    <TextView
+        android:id="@+id/announcement"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_margin="32dp"
+        android:background="@drawable/status_background"
+        android:gravity="center"
+        android:maxWidth="900dp"
+        android:padding="24dp"
+        android:textColor="@android:color/white"
+        android:textSize="34sp"
+        android:visibility="gone" />
+
     <!-- Shown while loading or when something failed -->
     <TextView
         android:id="@+id/status"
