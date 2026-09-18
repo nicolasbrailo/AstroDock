@@ -141,7 +141,7 @@ class AppListActivity : AppCompatActivity() {
         try {
             model.launch(app)
             // Some apps leave no way back to the launcher (see HomeButtonService)
-            if (homeButtonApps.isEnabled(app.component.packageName)) {
+            if (homeButtonApps.shouldShow(app.component.packageName, app.wantsLightStatusBar)) {
                 HomeButtonService.show(this)
             }
             finish()
@@ -203,7 +203,7 @@ class AppListActivity : AppCompatActivity() {
             }
         }
         val packageName = app.component.packageName
-        val hasHomeButton = homeButtonApps.isEnabled(packageName)
+        val hasHomeButton = homeButtonApps.shouldShow(packageName, app.wantsLightStatusBar)
         val homeButtonText =
             if (hasHomeButton) R.string.app_menu_home_button_off else R.string.app_menu_home_button_on
         menu.menu.add(homeButtonText).setOnMenuItemClickListener {
@@ -217,7 +217,7 @@ class AppListActivity : AppCompatActivity() {
                     )
                 )
             }
-            homeButtonApps.setEnabled(packageName, !hasHomeButton)
+            homeButtonApps.setShown(packageName, !hasHomeButton)
             onChanged()
             true
         }

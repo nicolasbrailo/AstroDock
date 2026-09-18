@@ -136,6 +136,12 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   it, so the button is only there while that app is in front. The service runs
   in the foreground (with a quiet notification), because it has to outlive the
   launcher's own screen.
+  Which apps get one is worked out automatically: `LauncherModel` reads each
+  app's theme for `windowLightStatusBar`, because the Portal draws its Back and
+  Home buttons in white and doesn't darken them, so they vanish over such an app
+  (F-Droid is one). Apps that ask for it in code instead are missed (WhatsApp
+  is one), so the long-press menu can force the button on or off per app, and
+  that choice wins over the automatic one.
 
 Unit tests are in `app/src/test/`. `android.util.Log` is a no-op there
 (`unitTests.isReturnDefaultValues`), and `org.json` is a stub, so code that
@@ -273,9 +279,17 @@ settings reset the slideshow.
   "screen off when nobody is around" behaviour.
 - `tools/capture-presence.sh OUT_DIR` records logcat, power, dream, top
   activity and light-sensor changes, for experiments like these.
-- `tools/setup-device.sh` does the parts an app can't: `sleep_timeout` (secure
-  setting) and, as a shortcut, the screensaver and home screen. Everything else
-  is granted from the System tab.
+- The Portal verifies every install made on the device against a fixed set of
+  Facebook signing certificates (`com.facebook.appverifier`, logging
+  "App certificate rejected"), so F-Droid and anything else fails with
+  "App not installed". It's off after `tools/setup-device.sh`
+  (`package_verifier_enable`, a global setting, so adb only). Installs over adb
+  are never verified (`verifier_verify_adb_installs=0`), which is why this app
+  installs fine.
+- `tools/setup-device.sh` takes no arguments: it applies everything an app can't
+  set for itself (home screen, screensaver, bug pill, app verifier) and prints
+  the result. Its header lists the commands to undo each one. Everything else is
+  granted from the System tab.
 - `sleep_timeout` does not stick: it was back at the Portal's 1200000 twice
   after the device dreamt and woke again, so something on the Portal resets it.
   Don't rely on it; to control when the screen goes off, use the device admin
@@ -292,9 +306,9 @@ settings reset the slideshow.
   brightness, power). It has no Home button.
 - The floating bug-report pill is an overlay window (`BugnubPillViewService`)
   drawn by `com.facebook.aloha.system.services`, not by the bug-reporter app
-  (disabling that app changes nothing). No setting controls it;
-  `tools/setup-device.sh bugnub off` denies that package the overlay app-op and
-  restarts it. That stops any other overlay from the same package too.
+  (disabling that app changes nothing). No setting controls it, so
+  `tools/setup-device.sh` denies that package the overlay app-op and restarts
+  it. That stops any other overlay from the same package too.
 - Waking the screen (presence, or the power key) starts the **screensaver**, not
   the home activity, so the screensaver has to work for the Portal to show our
   slideshow on wake. If it fails, the system resumes whatever activity was last

@@ -19,6 +19,8 @@
          apps in the app list's long-press menu. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Needed from Android 14 for the "specialUse" service below -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- Lets AppListActivity see the apps it can launch (Android 11+ hides
          other packages otherwise) -->
@@ -64,9 +66,12 @@
             </intent-filter>
         </activity>
 
+        <!-- It draws an overlay for as long as another app is in front, which
+             is none of the standard service types -->
         <service
             android:name=".overlay.HomeButtonService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse" />
 
         <!-- The slideshow as the system screensaver. BIND_DREAM_SERVICE means
              only the system can start it. -->

@@ -5,10 +5,12 @@ import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.content.pm.LauncherActivityInfo
 import android.content.pm.LauncherApps
+import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -22,6 +24,11 @@ data class LauncherApp(
     val icon: Drawable,
     val isSystem: Boolean, // Can't be uninstalled, only disabled
     val isOwnProfile: Boolean,
+    // The app asks for dark status bar icons. The Portal draws its Back and
+    // Home buttons in white and doesn't darken them, so they become invisible
+    // and untappable over such an app, leaving no way back to the launcher
+    // (see HomeButtonService).
+    val wantsLightStatusBar: Boolean,
 ) {
     // Identifies the app in a folder. The user is included so the same app in a
     // work profile is a different entry.
@@ -56,6 +63,10 @@ class LauncherModel(private val context: Context, private val onChanged: () -> U
         }
             .filterNot { it.component.packageName == context.packageName }
             .sortedBy { it.label.lowercase() }
+            .also { apps ->
+                val light = apps.filter { it.wantsLightStatusBar }.map { it.label }
+                Log.i(TAG, "Apps that hide the Portal's Back/Home buttons: $light")
+            }
     }
 
     private fun toApp(info: LauncherActivityInfo, user: UserHandle): LauncherApp {
@@ -70,7 +81,42 @@ class LauncherModel(private val context: Context, private val onChanged: () -> U
             icon = info.getBadgedIcon(0),
             isSystem = system,
             isOwnProfile = user == Process.myUserHandle(),
+            wantsLightStatusBar = wantsLightStatusBar(info),
         )
+    }
+
+    // Reads the app's own theme, since its windows don't exist yet. Apps that
+    // ask for it in code instead are missed, and can be switched on by hand in
+    // the long-press menu.
+    private fun wantsLightStatusBar(info: LauncherActivityInfo): Boolean {
+        val packageName = info.componentName.packageName
+        return try {
+            val appContext = context.createPackageContext(packageName, 0)
+            // LauncherActivityInfo.getActivityInfo() only exists from API 31
+            val activityInfo = context.packageManager.getActivityInfo(info.componentName, 0)
+            val themeId = activityInfo.themeResource.takeIf { it != 0 }
+                ?: info.applicationInfo.theme
+            if (themeId == 0) return false
+            val theme = appContext.resources.newTheme()
+            theme.applyStyle(themeId, true)
+            val attrs = theme.obtainStyledAttributes(intArrayOf(android.R.attr.windowLightStatusBar))
+            try {
+                attrs.getBoolean(0, false)
+            } finally {
+                attrs.recycle()
+            }
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.w(TAG, "Can't read the theme of $packageName", e)
+            false
+        } catch (e: RuntimeException) {
+            // A broken or unreadable resource table shouldn't drop the app
+            Log.w(TAG, "Can't read the theme of $packageName", e)
+            false
+        }
+    }
+
+    private companion object {
+        const val TAG = "LauncherModel"
     }
 
     fun launch(app: LauncherApp) {
