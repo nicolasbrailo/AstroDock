@@ -2,6 +2,7 @@ package com.nicobrailo.alauncher
 
 import android.app.admin.DevicePolicyManager
 import android.content.Context
+import android.os.PowerManager
 import android.provider.Settings as AndroidSettings
 import android.util.Log
 
@@ -41,6 +42,30 @@ object ScreenControl {
         } catch (e: SecurityException) {
             Log.w(TAG, "Can't set the screensaver delay", e)
         }
+    }
+
+    // Keeps the screen on while something the user is waiting for runs in
+    // another app, such as the system installer: a keep-screen-on flag on our
+    // own window stops working the moment that window is hidden, but a wake
+    // lock doesn't. Always released again by the caller; the timeout is only a
+    // backstop for a caller that dies first.
+    @Suppress("DEPRECATION") // No replacement that works while another app is in front
+    fun keepScreenOn(context: Context, reason: String, timeoutMillis: Long): PowerManager.WakeLock? {
+        val power = context.getSystemService(PowerManager::class.java) ?: return null
+        return try {
+            power.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "alauncher:$reason").apply {
+                setReferenceCounted(false)
+                acquire(timeoutMillis)
+                Log.i(TAG, "Keeping the screen on: $reason")
+            }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Can't keep the screen on", e)
+            null
+        }
+    }
+
+    fun release(lock: PowerManager.WakeLock?) {
+        if (lock?.isHeld == true) lock.release()
     }
 
     // True once the user has activated the device admin in the System tab

@@ -6,6 +6,8 @@
     <!-- Offering apps to install (Apps tab of the settings). The user still
          confirms every install in the system's own screen. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Keeps the screen on while an install is in progress -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Sets how long the Portal waits before starting the screensaver. It only
          works once the user allows it in the System tab: Settings.System.canWrite()

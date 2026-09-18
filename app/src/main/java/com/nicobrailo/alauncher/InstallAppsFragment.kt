@@ -4,6 +4,7 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.PowerManager
 import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
@@ -33,6 +34,12 @@ class InstallAppsFragment : Fragment() {
     // Apps being downloaded right now, so their rows aren't replaced underneath
     private val downloading = mutableSetOf<String>()
 
+    // Held from the start of a download until the user is back from the system
+    // installer, so the screensaver doesn't cover the install (see
+    // ScreenControl.keepScreenOn)
+    private var awake: PowerManager.WakeLock? = null
+    private var waitingForInstaller = false
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, state: Bundle?): View {
         val view = inflater.inflate(R.layout.fragment_system_settings, container, false)
         items = view.findViewById(R.id.items)
@@ -43,7 +50,22 @@ class InstallAppsFragment : Fragment() {
     // Rebuilt every time, so an app installed meanwhile shows as installed
     override fun onResume() {
         super.onResume()
+        // Back from the installer, whether the app was installed or not
+        if (waitingForInstaller) {
+            waitingForInstaller = false
+            letScreenSleep()
+        }
         if (downloading.isEmpty()) show()
+    }
+
+    override fun onDestroyView() {
+        letScreenSleep()
+        super.onDestroyView()
+    }
+
+    private fun letScreenSleep() {
+        ScreenControl.release(awake)
+        awake = null
     }
 
     private fun show() {
@@ -109,6 +131,7 @@ class InstallAppsFragment : Fragment() {
         }
         button.isEnabled = false
         downloading += app.packageName
+        awake = ScreenControl.keepScreenOn(requireContext(), "install", KEEP_AWAKE_MILLIS)
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val file = installer.download(app) { percent ->
@@ -118,7 +141,9 @@ class InstallAppsFragment : Fragment() {
                         getString(R.string.install_downloading, percent)
                     }
                 }
-                // The system takes over from here and asks the user to confirm
+                // The system takes over from here and asks the user to confirm.
+                // The screen is kept on until we're resumed again.
+                waitingForInstaller = true
                 installer.install(file)
             } catch (e: IOException) {
                 Log.w(TAG, "Can't download ${app.name}", e)
@@ -131,6 +156,7 @@ class InstallAppsFragment : Fragment() {
             } finally {
                 downloading -= app.packageName
                 button.isEnabled = true
+                if (!waitingForInstaller) letScreenSleep()
                 show()
             }
         }
@@ -138,5 +164,9 @@ class InstallAppsFragment : Fragment() {
 
     private companion object {
         const val TAG = "InstallAppsFragment"
+
+        // Long enough for a slow download and an unhurried user, and only a
+        // backstop: the lock is released as soon as the installer is done
+        const val KEEP_AWAKE_MILLIS = 10 * 60 * 1000L
     }
 }

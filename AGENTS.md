@@ -67,6 +67,11 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   opens its download page in a browser instead. Installing needs
   `REQUEST_INSTALL_PACKAGES` plus the user allowing "install unknown apps",
   which is asked for before downloading and is also listed in the System tab.
+  A download and the install that follows hold a screen-bright wake lock
+  (`ScreenControl.keepScreenOn`), because the screensaver would otherwise cover
+  the installer's confirmation: a keep-screen-on window flag is no use once
+  another app is in front. It is released when the fragment is resumed again
+  (installed or cancelled), and has a 10 minute timeout as a backstop.
 - `SystemSettingsFragment.kt`: the System tab. One item per thing the app needs
   from the system, with its state and a button that opens the system dialog.
   These intents must be started **for a result** (`systemDialog.launch`): the
