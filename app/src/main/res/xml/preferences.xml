@@ -35,4 +35,32 @@
             app:defaultValue="30"
             app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/settings_category_screen">
+        <EditTextPreference
+            app:key="screensaver_minutes"
+            app:title="@string/settings_screensaver_minutes"
+            app:dialogMessage="@string/settings_screensaver_minutes_hint"
+            app:defaultValue="0"
+            app:useSimpleSummaryProvider="true" />
+        <SwitchPreferenceCompat
+            app:key="night_screen_off"
+            app:title="@string/settings_night_screen_off"
+            app:summary="@string/settings_night_screen_off_hint"
+            app:defaultValue="false" />
+        <EditTextPreference
+            app:key="night_start_hour"
+            app:title="@string/settings_night_start"
+            app:dialogMessage="@string/settings_night_hour_hint"
+            app:defaultValue="0"
+            app:dependency="night_screen_off"
+            app:useSimpleSummaryProvider="true" />
+        <EditTextPreference
+            app:key="night_end_hour"
+            app:title="@string/settings_night_end"
+            app:dialogMessage="@string/settings_night_hour_hint"
+            app:defaultValue="6"
+            app:dependency="night_screen_off"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
 </PreferenceScreen>

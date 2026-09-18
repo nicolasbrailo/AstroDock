@@ -64,9 +64,22 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   role dialog identifies the caller that way and closes immediately otherwise.
 - `ScreenAdminReceiver.kt` + `res/xml/device_admin.xml`: device admin with the
   force-lock policy only, so the app can turn the screen off.
-- `SlideshowController.kt` + `res/layout/slideshow.xml`: the slideshow itself.
-  Used by both the home screen and the screensaver; `interactive` is false in
-  the screensaver, where a touch wakes the device instead.
+- `ScreenControl.kt`: the two bits of screen behaviour the app may control. It
+  writes `screen_off_timeout` (when the screensaver starts), which needs both
+  the `WRITE_SETTINGS` declaration in the manifest **and** the user's grant:
+  `Settings.System.canWrite()` is false without either. It also turns the screen
+  off with `DevicePolicyManager.lockNow()` for the night rule, and holds the
+  night-window arithmetic (which wraps past midnight), unit tested.
+- `SlideshowState.kt`: which picture is being shown, as one object for the whole
+  process (`SlideshowState.shared`): the settings, client and picker, the
+  history, the picture picked ahead, the metadata cache and whether the details
+  are expanded. The home screen and the screensaver both bind to it, so the
+  slideshow carries on across the switch instead of jumping to an unrelated
+  picture. Picking is behind a mutex, so only one of them picks at a time.
+- `SlideshowController.kt` + `res/layout/slideshow.xml`: the slideshow itself:
+  the views, the timer and the gestures over `SlideshowState`. Used by both the
+  home screen and the screensaver; `interactive` is false in the screensaver,
+  where a touch wakes the device instead.
 - `SlideshowActivity.kt`: the slideshow as the home screen. It declares HOME and
   LAUNCHER, `singleTask` and `stateNotNeeded`. It only becomes the home screen
   once the user picks it.
@@ -136,8 +149,12 @@ documents the API). Keep the two behaving the same.
 - Swipe left (finger moves right to left, like a photo gallery): forward. Swipe
   right: back. Moving forward always works once the next picture has loaded:
   when the newest picture is on screen, the next one is `upcoming`.
-- `PictureHistory` keeps the last `HISTORY_SIZE` (20) pictures. Going back stops
-  at the oldest kept one. Going forward first walks the kept pictures again.
+- `PictureHistory` keeps the last 20 pictures (`SlideshowState.HISTORY_SIZE`).
+  Going back stops at the oldest kept one. Going forward first walks the kept
+  pictures again.
+- The home screen and the screensaver share all of that, so switching between
+  them keeps the picture, the history and the expanded details. Only one of them
+  is on screen at a time, so only one runs the timer.
 - The timer slides to the next picture every `slideSeconds` (default 30) while
   the activity is visible. If the next picture isn't ready because picking or
   loading it failed, the tick retries instead. Every swipe restarts the timer,
@@ -184,7 +201,18 @@ documents the API). Keep the two behaving the same.
 
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album
-(default 0 = all) and seconds per picture (default 30).
+(default 0 = all) and seconds per picture (default 30). Under "Screen": how long
+before the screensaver starts (0 leaves the system's value alone) and an opt-in
+"turn the screen off at night" with its hours (default 00:00 to 06:00, off).
+
+**Night screen off**. While the slideshow is on screen it checks every 30s (the
+first check 20s after it appears, so someone walking in has time to touch it)
+whether the hour is inside the night window. If it is, and nothing was touched
+in the last 5 minutes, it calls `lockNow()`. The Portal's presence detection
+wakes the screen again when it sees someone, and the next check switches it off
+again, so the screen stays dark unless the user actually touches it. Changing
+these settings doesn't disturb the pictures: only the server and sampling
+settings reset the slideshow.
 
 ## Portal platform notes (measured on the device, 2026-09-17)
 

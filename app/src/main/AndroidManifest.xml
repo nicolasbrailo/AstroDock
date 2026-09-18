@@ -4,6 +4,11 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Sets how long the Portal waits before starting the screensaver. It only
+         works once the user allows it in the System tab: Settings.System.canWrite()
+         needs both this declaration and that grant. -->
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+
     <!-- Lets AppListActivity see the apps it can launch (Android 11+ hides
          other packages otherwise) -->
     <queries>

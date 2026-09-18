@@ -33,6 +33,8 @@ class SlideshowDreamService : DreamService() {
 
     // Any touch ends the screensaver and goes back to the home screen
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        // Counts as the user being there, so the night rule holds off
+        SlideshowState.shared.noteTouch()
         wakeUp()
         return super.dispatchTouchEvent(event)
     }

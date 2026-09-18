@@ -5,6 +5,7 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -25,15 +26,14 @@ import coil3.request.SuccessResult
 import coil3.size.ViewSizeResolver
 import com.nicobrailo.alauncher.immich.AlbumPicture
 import com.nicobrailo.alauncher.immich.ImmichClient
-import com.nicobrailo.alauncher.immich.ImmichException
 import com.nicobrailo.alauncher.immich.ImmichPictureInfo
 import com.nicobrailo.alauncher.immich.ImmichPictureSize
-import com.nicobrailo.alauncher.immich.RandomAlbumPicker
 import com.nicobrailo.alauncher.media.NowPlaying
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.LocalTime
 import kotlin.math.abs
 import kotlin.math.sign
 
@@ -53,6 +53,8 @@ import kotlin.math.sign
 // - The bottom right corner shows what another app is playing, with controls,
 //   so the device can play music while the pictures keep going (see
 //   NowPlaying). It needs notification access, and stays hidden without it.
+// - If the user asked for it, the screen is switched off during the night
+//   hours (see ScreenControl), a little after they last touched it.
 //
 // The picture on screen (cur) and its neighbours (prev, next) each have their
 // own view, kept one screen width to either side, so a neighbour can slide in
@@ -83,29 +85,21 @@ class SlideshowController(
         val ready: Boolean get() = picture != null && loaded
     }
 
+    // What is being shown, shared with the screensaver (or the home screen)
+    private val state = SlideshowState.shared
+
     private val status: TextView = root.findViewById(R.id.status)
     private val pictureInfo: TextView = root.findViewById(R.id.picture_info)
     private val clock: View = root.findViewById(R.id.clock)
     private val debug: TextView = root.findViewById(R.id.debug)
-    private var infoExpanded = false
 
     private var prev = Slot(root.findViewById(R.id.picture_a))
     private var cur = Slot(root.findViewById(R.id.picture_b))
     private var next = Slot(root.findViewById(R.id.picture_c))
 
-    // Rebuilt in start() whenever the settings change
-    private var settings: Settings? = null
-    private var client: ImmichClient? = null
-    private var picker: RandomAlbumPicker? = null
-
-    private val history = PictureHistory<AlbumPicture>(HISTORY_SIZE)
-    // Picked to follow the newest picture in history, but not shown yet
-    private var upcoming: AlbumPicture? = null
     private var pickJob: Job? = null
-    // True while pickJob runs. Not pickJob.isActive: the job must be able to
-    // start the next pick when it finishes, while it's still active.
-    private var picking = false
     private var timerJob: Job? = null
+    private var nightJob: Job? = null
 
     // What another app is playing. Only watched while the slideshow is visible.
     private val nowPlayingPanel: View = root.findViewById(R.id.now_playing)
@@ -137,7 +131,7 @@ class SlideshowController(
             root.findViewById<View>(R.id.now_playing_next).setOnClickListener { nowPlaying.next() }
             root.findViewById<View>(R.id.now_playing_previous).setOnClickListener { nowPlaying.previous() }
             pictureInfo.setOnClickListener {
-                infoExpanded = !infoExpanded
+                state.infoExpanded = !state.infoExpanded
                 updatePictureInfo()
             }
             clock.setOnClickListener { toggleDebug() }
@@ -147,12 +141,12 @@ class SlideshowController(
 
     // Called when the slideshow becomes visible
     fun start() {
-        val newSettings = Settings.load(context)
-        if (newSettings != settings) {
-            applySettings(newSettings)
-        } else {
-            // Pick up albums added on the server since the list was fetched
-            picker?.refresh()
+        // The settings may have changed while this wasn't on screen, and the
+        // other slideshow may have moved on to another picture
+        if (state.reloadSettings(context)) {
+            pageAnimator?.cancel()
+            for (slot in listOf(prev, cur, next)) bind(slot, null)
+            setOffset(0f)
         }
 
         nowPlaying.start()
@@ -165,8 +159,15 @@ class SlideshowController(
             }
         }
 
-        if (picker == null) return
-        if (history.current == null) ensurePick()
+        startNightWatch()
+
+        if (!state.isConfigured) {
+            showStatus(context.getString(R.string.slideshow_not_configured))
+            bindFromState()
+            return
+        }
+        if (state.current == null) showStatus(context.getString(R.string.slideshow_loading))
+        syncPictures()
         restartTimer()
         if (debug.visibility == View.VISIBLE) startDebugUpdates()
     }
@@ -174,6 +175,7 @@ class SlideshowController(
     // Called when it isn't visible any more. The pictures are kept, so coming
     // back shows the same one.
     fun stop() {
+        nightJob?.cancel()
         nowPlayingJob?.cancel()
         nowPlaying.stop()
         timerJob?.cancel()
@@ -181,66 +183,39 @@ class SlideshowController(
         portalState.stop()
     }
 
-    private fun applySettings(s: Settings) {
-        settings = s
-        pickJob?.cancel()
-        picking = false
-        timerJob?.cancel()
-        pageAnimator?.cancel()
-        history.clear()
-        upcoming = null
-        for (slot in listOf(prev, cur, next)) bind(slot, null)
-        setOffset(0f)
-        updatePictureInfo()
-
-        if (!s.isConfigured) {
-            client = null
-            picker = null
-            showStatus(context.getString(R.string.slideshow_not_configured))
-            return
-        }
-        val c = ImmichClient(s.serverUrl, s.apiKey)
-        client = c
-        picker = RandomAlbumPicker(c, s.maxPicturesPerAlbum, s.percentOfAlbum)
-        showStatus(context.getString(R.string.slideshow_loading))
-    }
-
     // ---- Pictures ----------------------------------------------------------
 
-    // Picks a new picture in the background, unless a pick is already running.
-    // The first one goes straight on screen; later ones become `upcoming`.
-    private fun ensurePick() {
-        val p = picker ?: return
-        if (picking) return
-        picking = true
-        pickJob = scope.launch {
-            val picture = try {
-                p.next()
-            } catch (e: ImmichException) {
-                Log.w(TAG, "Can't pick a picture", e)
-                showStatus(context.getString(R.string.slideshow_error, e.message))
-                return@launch
-            } finally {
-                if (p === picker) picking = false
-            }
-            if (p !== picker) return@launch // The settings changed meanwhile
-            if (history.current == null) {
-                history.add(picture)
-                bind(cur, picture)
-                updatePictureInfo()
-            } else {
-                upcoming = picture
-            }
-            refreshNeighbours()
-        }
+    // Shows the pictures the shared state holds, and picks whatever is still
+    // missing (the first picture, and the one after the newest)
+    private fun syncPictures() {
+        bindFromState()
+        ensurePick()
     }
 
-    // Loads the neighbours of the picture on screen, and picks the next picture
-    // ahead of time if the newest one is on screen
-    private fun refreshNeighbours() {
-        bind(prev, history.peekBack())
-        bind(next, history.peekForward() ?: upcoming)
-        if (history.current != null && history.atNewest && upcoming == null) ensurePick()
+    private fun bindFromState() {
+        bind(cur, state.current)
+        bind(prev, state.previous)
+        bind(next, state.next)
+        updatePictureInfo()
+    }
+
+    // Keeps picking until there's nothing left to pick. The shared state lets
+    // only one pick run at a time, however many slideshows ask.
+    private fun ensurePick() {
+        if (pickJob?.isActive == true) return
+        pickJob = scope.launch {
+            while (true) {
+                when (val result = state.pickAhead()) {
+                    SlideshowState.PickResult.Picked -> bindFromState()
+                    SlideshowState.PickResult.Nothing -> return@launch
+                    is SlideshowState.PickResult.Failed -> {
+                        // onTimer() retries
+                        showStatus(context.getString(R.string.slideshow_error, result.message))
+                        return@launch
+                    }
+                }
+            }
+        }
     }
 
     // Makes slot show picture (nothing if null), loading it and its metadata in
@@ -255,16 +230,11 @@ class SlideshowController(
         slot.loaded = false
         slot.info = null
         slot.view.setImageDrawable(null)
-        val c = client ?: return
+        val c = state.client ?: return
         if (id == null) return
 
         slot.infoJob = scope.launch {
-            val info = try {
-                c.getPictureMetadata(id)
-            } catch (e: ImmichException) {
-                Log.w(TAG, "Can't get metadata of picture $id", e)
-                return@launch
-            }
+            val info = state.metadata(id) ?: return@launch
             if (slot.id != id) return@launch
             slot.info = info
             if (slot === cur) updatePictureInfo()
@@ -297,13 +267,7 @@ class SlideshowController(
 
     // Puts the next picture on screen, once it has slid in. Requires next.ready.
     private fun pageForward() {
-        val picture = next.picture ?: return
-        if (history.atNewest) {
-            history.add(picture)
-            upcoming = null
-        } else {
-            history.forward()
-        }
+        if (!state.goForward()) return
         val old = prev
         prev = cur
         cur = next
@@ -313,7 +277,7 @@ class SlideshowController(
 
     // Puts the previous picture on screen, once it has slid in. Requires prev.ready.
     private fun pageBack() {
-        history.back() ?: return
+        if (!state.goBack()) return
         val old = next
         next = cur
         cur = prev
@@ -324,8 +288,7 @@ class SlideshowController(
     private fun afterPaging() {
         setOffset(0f)
         if (cur.loaded) status.visibility = View.GONE
-        updatePictureInfo()
-        refreshNeighbours()
+        syncPictures()
     }
 
     // Shows the metadata of the picture on screen, hiding the text while it
@@ -335,12 +298,12 @@ class SlideshowController(
         val info = cur.info
         val text = when {
             picture == null || info == null -> ""
-            infoExpanded -> pictureDetails(picture, info)
+            state.infoExpanded -> pictureDetails(picture, info)
             else -> pictureSummary(info)
         }
         pictureInfo.text = text
         pictureInfo.visibility = if (text.isEmpty()) View.GONE else View.VISIBLE
-        pictureInfo.setBackgroundResource(if (infoExpanded) R.drawable.status_background else 0)
+        pictureInfo.setBackgroundResource(if (state.infoExpanded) R.drawable.status_background else 0)
     }
 
     // The panel is only there while something is playing (or paused, so it can
@@ -396,8 +359,39 @@ class SlideshowController(
 
     private fun slideshowLine(): String {
         val album = cur.picture?.album?.name ?: "none"
-        val seconds = settings?.slideSeconds ?: 0
+        val seconds = state.slideSeconds
         return "Slideshow: ${if (interactive) "home" else "screensaver"}, album $album, ${seconds}s per picture"
+    }
+
+    // ---- Night -------------------------------------------------------------
+
+    // Switches the screen off during the night hours. The Portal's presence
+    // detection wakes the screen again when it sees someone, and the next check
+    // switches it off again, so the screen stays dark at night unless the user
+    // actually touches it.
+    private fun startNightWatch() {
+        nightJob?.cancel()
+        nightJob = scope.launch {
+            // Not straight away: someone who just walked in should have time to
+            // touch the screen before it goes dark again
+            delay(NIGHT_FIRST_CHECK_MILLIS)
+            while (true) {
+                checkNight()
+                delay(NIGHT_CHECK_MILLIS)
+            }
+        }
+    }
+
+    private fun checkNight() {
+        val settings = state.currentSettings ?: return
+        if (!settings.nightScreenOff) return
+        if (!ScreenControl.isNight(LocalTime.now().hour, settings.nightStartHour, settings.nightEndHour)) return
+        // Someone is using the device: leave it alone for a while
+        if (SystemClock.elapsedRealtime() - state.lastTouchAt < NIGHT_TOUCH_GRACE_MILLIS) return
+        if (!ScreenControl.canTurnScreenOff(context)) return
+
+        Log.i(TAG, "Night hours: turning the screen off")
+        ScreenControl.turnScreenOff(context)
     }
 
     // ---- Timer -------------------------------------------------------------
@@ -406,8 +400,8 @@ class SlideshowController(
     // after every swipe, so the user gets a full slide of time.
     private fun restartTimer() {
         timerJob?.cancel()
-        val seconds = settings?.slideSeconds ?: return
-        if (picker == null) return
+        if (!state.isConfigured) return
+        val seconds = state.slideSeconds
         timerJob = scope.launch {
             while (true) {
                 delay(seconds * 1000L)
@@ -424,15 +418,11 @@ class SlideshowController(
         }
 
         // The next picture isn't there: picking or loading it failed (or is
-        // still running). Retry.
-        if (next.loading || picking) return
-        if (history.current == null) {
-            ensurePick()
-            return
-        }
-        if (history.atNewest) upcoming = null
+        // still running). Forget it and try again.
+        if (next.loading || pickJob?.isActive == true) return
+        state.dropUpcoming()
         bind(next, null)
-        refreshNeighbours()
+        syncPictures()
     }
 
     // ---- Swiping and tapping -----------------------------------------------
@@ -492,6 +482,7 @@ class SlideshowController(
     private fun onSwipeTouch(e: MotionEvent) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                state.noteTouch()
                 downX = e.x
                 downY = e.y
                 dragging = false
@@ -505,7 +496,7 @@ class SlideshowController(
                 if (!dragging) {
                     val slop = ViewConfiguration.get(context).scaledTouchSlop
                     val horizontal = abs(dx) > slop && abs(dx) > abs(e.y - downY)
-                    if (!horizontal || picker == null || pageAnimator != null) return
+                    if (!horizontal || !state.isConfigured || pageAnimator != null) return
                     dragging = true
                     // Start moving from here, so the picture doesn't jump by the slop
                     downX += slop * sign(dx)
@@ -559,15 +550,17 @@ class SlideshowController(
     private companion object {
         const val TAG = "SlideshowController"
 
-        // How many pictures the user can swipe back through
-        const val HISTORY_SIZE = 20
-
         // A swipe moves to the neighbour if it went this fraction of the screen
         // width, or was a fling
         const val PAGE_DISTANCE_FRACTION = 0.25f
         const val FLING_VELOCITY_FACTOR = 4
         const val PAGE_ANIMATION_MS = 300L
         const val NOW_PLAYING_POLL_MILLIS = 5000L
+
+        const val NIGHT_CHECK_MILLIS = 30_000L
+        const val NIGHT_FIRST_CHECK_MILLIS = 20_000L
+        // How long a touch keeps the screen on during the night hours
+        const val NIGHT_TOUCH_GRACE_MILLIS = 5 * 60 * 1000L
         // How much harder it is to drag when there is no picture to move to
         const val OVERSCROLL_RESISTANCE = 3f
     }

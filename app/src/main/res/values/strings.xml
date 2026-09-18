@@ -68,4 +68,13 @@
     <string name="system_media_title">Media controls</string>
     <string name="system_media_description">Lets the slideshow show and control what other apps are playing, e.g. Jellyfin. Turn alauncher on in the list that opens.</string>
     <string name="system_media_button">Open notification access</string>
+
+    <string name="settings_category_screen">Screen</string>
+    <string name="settings_screensaver_minutes">Start screensaver after (minutes)</string>
+    <string name="settings_screensaver_minutes_hint">How long the Portal waits before the screensaver starts. 0 leaves the system setting alone. Needs \"Change system settings\" in the System tab.</string>
+    <string name="settings_night_screen_off">Turn the screen off at night</string>
+    <string name="settings_night_screen_off_hint">Switches the screen off during the hours below, even when someone is in the room. A touch keeps it on for a few minutes. Needs \"Turn the screen off\" in the System tab.</string>
+    <string name="settings_night_start">Night starts at (hour)</string>
+    <string name="settings_night_end">Night ends at (hour)</string>
+    <string name="settings_night_hour_hint">Hour of the day, 0 to 23</string>
 </resources>
