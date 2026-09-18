@@ -42,4 +42,22 @@ val INSTALLABLE_APPS = listOf(
         apkUrl = null,
         pageUrl = "https://f-droid.org/packages/org.jellyfin.mobile/",
     ),
+    Installable(
+        name = "WhatsApp",
+        packageName = "com.whatsapp",
+        description = "Messages and calls. Downloaded from whatsapp.com, which is a large " +
+            "download (about 150 MB).",
+        // whatsapp.com serves the current release from this URL, as an APK
+        apkUrl = "https://www.whatsapp.com/android/current/WhatsApp.apk",
+        pageUrl = "https://www.whatsapp.com/download/android",
+    ),
+    Installable(
+        name = "Spotify",
+        packageName = "com.spotify.music",
+        description = "Music streaming. Spotify only publishes the app through Google Play, so " +
+            "this opens APKPure, which mirrors it.",
+        // No official APK: spotify.com only links to Google Play
+        apkUrl = null,
+        pageUrl = "https://apkpure.com/spotify-app/com.spotify.music/download",
+    ),
 )
