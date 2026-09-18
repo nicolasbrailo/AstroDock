@@ -47,8 +47,8 @@
     <string name="system_write_settings_description">Lets the app change how long the Portal waits before starting the screensaver.</string>
     <string name="system_write_settings_button">Allow</string>
 
-    <string name="system_sleep_timeout_title">Screen off delay: %1$s</string>
-    <string name="system_sleep_timeout_description">How long the Portal waits after it last saw someone before turning the screen off. This one can only be changed over adb:\n\nadb shell settings put secure sleep_timeout 120000</string>
+    <string name="system_sleep_timeout_title">Set the screen off delay (now %1$s)</string>
+    <string name="system_sleep_timeout_description">Lets the app keep the screen off delay at what the Slideshow tab says; the Portal resets it otherwise. Only adb can allow this:\n\nadb shell pm grant com.nicobrailo.alauncher android.permission.WRITE_SECURE_SETTINGS</string>
 
     <string name="app_menu_app_info">App info</string>
     <string name="app_menu_uninstall">Uninstall</string>

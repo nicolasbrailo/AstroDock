@@ -5,15 +5,14 @@
 #
 # Usage: tools/setup-device.sh
 #
-# It makes alauncher the home screen, turns screensavers off (so the screen
-# switches off by itself when the Portal stops seeing people, instead of
-# dreaming for 20 minutes first), hides the Portal's
+# It makes alauncher the home screen and the screensaver, lets it write the
+# secure setting that decides when the screen switches off, hides the Portal's
 # floating bug-report pill, and turns off the Portal's app verifier, which only
 # accepts apps signed by Facebook and fails every other install with "App
 # certificate rejected" (adb installs are never verified). To undo any of it:
 #
 #   adb shell cmd package set-home-activity com.facebook.alohaapps.launcher
-#   adb shell settings put secure screensaver_enabled 1
+#   adb shell pm revoke com.nicobrailo.alauncher android.permission.WRITE_SECURE_SETTINGS
 #   adb shell settings put secure screensaver_components \
 #     com.facebook.alohaapps.launcher/com.facebook.aloha.app.home.touch.HomeDreamService
 #   adb shell appops set com.facebook.aloha.system.services SYSTEM_ALERT_WINDOW allow
@@ -36,13 +35,17 @@ OVERLAY_PKG=com.facebook.aloha.system.services
 
 echo "Setting up $PKG..."
 adb shell cmd package set-home-activity "$PKG/.SlideshowActivity" >/dev/null
-# Screensavers off: with one running, the screen only sleeps after the secure
-# sleep_timeout (20 minutes, and the Portal resets it), while with none the
-# system screen_off_timeout switches the screen off, and the app can set that
-# one itself. The component stays pointed at ours, so it's our slideshow and
-# not the Portal's if screensavers are ever turned back on.
+# The screensaver has to stay on: the Portal's presence detection reports
+# "someone is here" as an ambient-mode poke, which keeps a running screensaver
+# alive but does not hold an awake screen on. Without one the screen goes dark
+# on the plain inactivity timer even with somebody in the room.
 adb shell settings put secure screensaver_components "$PKG/.SlideshowDreamService"
-adb shell settings put secure screensaver_enabled 0
+adb shell settings put secure screensaver_enabled 1
+
+# sleep_timeout (how long after the Portal last saw someone the screen goes
+# off) is a secure setting. This grant lets the app keep it at whatever the
+# Slideshow tab says, which matters because the Portal resets it on its own.
+adb shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS
 adb shell appops set "$OVERLAY_PKG" SYSTEM_ALERT_WINDOW deny
 adb shell am force-stop "$OVERLAY_PKG"
 adb shell settings put global package_verifier_enable 0
@@ -52,6 +55,7 @@ echo "home screen:      $(adb shell cmd package resolve-activity -a android.inte
   -c android.intent.category.HOME 2>/dev/null | sed -n 's/^ *name=//p' | head -1 | tr -d '\r')"
 echo "screensaver:      $(adb shell settings get secure screensaver_components | tr -d '\r')"
 echo "  enabled:        $(adb shell settings get secure screensaver_enabled | tr -d '\r')"
-echo "screen off after: $(adb shell settings get system screen_off_timeout | tr -d '\r') ms (since the Portal last saw someone)"
+echo "screensaver after: $(adb shell settings get system screen_off_timeout | tr -d '\r') ms (screen_off_timeout)"
+echo "screen off after:  $(adb shell settings get secure sleep_timeout | tr -d '\r') ms (sleep_timeout, since the Portal last saw someone)"
 echo "bug pill overlay: $(adb shell appops get "$OVERLAY_PKG" SYSTEM_ALERT_WINDOW | tr -d '\r' | head -1)"
 echo "app verifier:     $(adb shell settings get global package_verifier_enable | tr -d '\r') (1 rejects apps not signed by Facebook)"

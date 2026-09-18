@@ -136,13 +136,13 @@ class SystemSettingsFragment : Fragment() {
                     Uri.parse("package:${context.packageName}")
                 ),
             ),
-            // Not grantable: sleep_timeout is a secure setting, so only adb can
-            // change it. Shown so its value is visible.
+            // Only adb can grant this one, so there's nothing to tap: the
+            // command is in the description, and tools/setup-device.sh runs it
             Item(
                 title = getString(R.string.system_sleep_timeout_title, formatMillis(sleepTimeout)),
                 description = getString(R.string.system_sleep_timeout_description),
                 buttonText = null,
-                done = true,
+                done = ScreenControl.canWriteSecureSettings(context),
                 intent = null,
             ),
         )

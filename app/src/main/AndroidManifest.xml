@@ -14,6 +14,13 @@
          needs both this declaration and that grant. -->
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
 
+    <!-- Sets sleep_timeout: how long after the Portal last saw someone the
+         screen goes off. Only adb can grant it (tools/setup-device.sh); without
+         the grant the app carries on with the Portal's own delay. -->
+    <uses-permission
+        android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
     <!-- The home button drawn over apps that hide the Portal's own Back/Home
          bar (WhatsApp does). The user grants it in the System tab and picks the
          apps in the app list's long-press menu. -->

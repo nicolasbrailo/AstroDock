@@ -446,7 +446,7 @@ class SlideshowController(
         return "Slideshow: ${if (interactive) "home" else "screensaver"}, album $album, ${seconds}s per picture"
     }
 
-    // ---- Night -------------------------------------------------------------
+    // ---- Screen ------------------------------------------------------------
 
     // Switches the screen off during the night hours. The Portal's presence
     // detection wakes the screen again when it sees someone, and the next check
@@ -459,6 +459,9 @@ class SlideshowController(
             // touch the screen before it goes dark again
             delay(NIGHT_FIRST_CHECK_MILLIS)
             while (true) {
+                // The Portal resets the screen-off delay on its own, so it's
+                // written again rather than only once at startup
+                state.currentSettings?.let { ScreenControl.applyScreenOffDelay(context, it) }
                 checkNight()
                 delay(NIGHT_CHECK_MILLIS)
             }
