@@ -87,4 +87,20 @@
     <string name="system_overlay_title">Home button over other apps</string>
     <string name="system_overlay_description">Lets the launcher draw a home button over apps that hide the Portal\'s own Back and Home buttons, like WhatsApp. Pick the apps by long-pressing them in the app list.</string>
     <string name="system_overlay_button">Allow</string>
+
+    <string name="settings_tab_apps">Apps</string>
+    <string name="install_installed">Installed</string>
+    <string name="install_not_installed">Not installed</string>
+    <string name="install_downloading">Downloading… %1$d%%</string>
+    <string name="install_downloading_unknown">Downloading…</string>
+    <string name="install_failed">Download failed: %1$s</string>
+    <string name="install_button_install">Download and install</string>
+    <string name="install_button_page">Open download page</string>
+    <string name="install_button_open">Open</string>
+    <string name="install_needs_permission">First allow alauncher to install apps, then try again.</string>
+    <string name="install_no_browser">No browser to open %1$s</string>
+
+    <string name="system_install_title">Install unknown apps</string>
+    <string name="system_install_description">Lets alauncher install the apps offered in the Apps tab. The system still asks before each install.</string>
+    <string name="system_install_button">Allow</string>
 </resources>

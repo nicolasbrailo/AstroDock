@@ -58,6 +58,15 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   to another device), and such a session is skipped when choosing which one to
   show. A paused session is shown for 15 minutes, so it can still be resumed.
   Sound stopping isn't reported, so the panel is also re-checked every 5s.
+- `InstallAppsFragment.kt` + `apps/Installable.kt`, `apps/ApkInstaller.kt`: the
+  Apps tab, which offers apps worth having on a Portal (it has no app store).
+  `INSTALLABLE_APPS` is the catalogue; add entries there. An entry with an
+  `apkUrl` (a URL that always serves the current release, as F-Droid publishes)
+  is downloaded to the cache and handed to the system installer through a
+  FileProvider; one without (most projects number their downloads per release)
+  opens its download page in a browser instead. Installing needs
+  `REQUEST_INSTALL_PACKAGES` plus the user allowing "install unknown apps",
+  which is asked for before downloading and is also listed in the System tab.
 - `SystemSettingsFragment.kt`: the System tab. One item per thing the app needs
   from the system, with its state and a button that opens the system dialog.
   These intents must be started **for a result** (`systemDialog.launch`): the

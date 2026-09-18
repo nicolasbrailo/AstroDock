@@ -12,8 +12,8 @@ import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
 
-// Two tabs: the slideshow settings (Settings.kt) and what the app needs from
-// the system (SystemSettingsFragment).
+// Three tabs: the slideshow settings (Settings.kt), what the app needs from the
+// system (SystemSettingsFragment), and apps to install (InstallAppsFragment).
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -22,16 +22,25 @@ class SettingsActivity : AppCompatActivity() {
 
         val pager = findViewById<ViewPager2>(R.id.pager)
         pager.adapter = object : FragmentStateAdapter(this) {
-            override fun getItemCount() = 2
+            override fun getItemCount() = TABS.size
 
-            override fun createFragment(position: Int): Fragment =
-                if (position == 0) SlideshowSettingsFragment() else SystemSettingsFragment()
+            override fun createFragment(position: Int): Fragment = when (position) {
+                0 -> SlideshowSettingsFragment()
+                1 -> SystemSettingsFragment()
+                else -> InstallAppsFragment()
+            }
         }
         TabLayoutMediator(findViewById<TabLayout>(R.id.tabs), pager) { tab, position ->
-            tab.text = getString(
-                if (position == 0) R.string.settings_tab_slideshow else R.string.settings_tab_system
-            )
+            tab.text = getString(TABS[position])
         }.attach()
+    }
+
+    private companion object {
+        val TABS = listOf(
+            R.string.settings_tab_slideshow,
+            R.string.settings_tab_system,
+            R.string.settings_tab_apps,
+        )
     }
 
     // Edits the settings in Settings.kt. SlideshowActivity picks up changes when

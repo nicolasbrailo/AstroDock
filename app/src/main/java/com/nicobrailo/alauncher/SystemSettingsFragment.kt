@@ -126,6 +126,16 @@ class SystemSettingsFragment : Fragment() {
                     ?.contains(context.packageName) == true,
                 intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"),
             ),
+            Item(
+                title = getString(R.string.system_install_title),
+                description = getString(R.string.system_install_description),
+                buttonText = getString(R.string.system_install_button),
+                done = context.packageManager.canRequestPackageInstalls(),
+                intent = Intent(
+                    AndroidSettings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}")
+                ),
+            ),
             // Not grantable: sleep_timeout is a secure setting, so only adb can
             // change it. Shown so its value is visible.
             Item(
