@@ -15,7 +15,7 @@
     <string name="settings_percent">Percent of each album</string>
     <string name="settings_percent_hint">Show this percentage (0–100) of each album\'s pictures, then apply the max above. 0 means all of them.</string>
     <string name="settings_slide_seconds">Seconds per picture</string>
-    <string name="settings_slide_seconds_hint">How long each picture stays on screen</string>
+    <string name="settings_slide_seconds_hint">Seconds each picture stays on screen</string>
     <string name="settings_invalid_number">Enter a number between %1$d and %2$d</string>
 
     <string name="slideshow_not_configured">Tap the screen, then the settings button, to set the Immich server URL and API key.</string>
@@ -71,7 +71,7 @@
 
     <string name="settings_category_screen">Screen</string>
     <string name="settings_screen_off_minutes">Turn the screen off after (minutes)</string>
-    <string name="settings_screen_off_minutes_hint">How long the Portal waits, after it last saw someone in the room, before switching the screen off. 0 leaves the system setting alone. Needs \"Change system settings\" in the System tab.</string>
+    <string name="settings_screen_off_minutes_hint">Minutes after the Portal last saw someone in the room before the screen switches off. 0 leaves the system settings alone. Needs the screen off delay in the System tab.</string>
     <string name="settings_night_screen_off">Turn the screen off at night</string>
     <string name="settings_night_screen_off_hint">Switches the screen off during the hours below, even when someone is in the room. A touch keeps it on for a few minutes. Needs \"Turn the screen off\" in the System tab.</string>
     <string name="settings_night_start">Night starts at (hour)</string>

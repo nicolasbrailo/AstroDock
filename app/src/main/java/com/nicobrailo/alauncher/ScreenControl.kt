@@ -29,9 +29,17 @@ object ScreenControl {
     // Hidden framework constant
     private const val SLEEP_TIMEOUT = "sleep_timeout"
 
-    // How long before the slideshow becomes the screensaver. Short, so ambient
-    // mode (where presence keeps the screen on) is reached quickly.
-    private const val SCREENSAVER_AFTER_MILLIS = 60_000
+    // Half of a very short setting would leave no time to walk up to the device
+    private const val MINIMUM_SLEEP_MILLIS = 30_000
+
+    // The screensaver timeout has to stay *longer* than the screen-off delay.
+    // While the screensaver runs, the system ends it once this timeout passes
+    // without activity, and if the screen-off delay hasn't elapsed yet it wakes
+    // the device instead of sleeping, which resets the delay: the Portal then
+    // alternates between screensaver and awake for ever and never sleeps
+    // (measured with 60s against a 2 minute delay). Sleeping wins as long as
+    // its delay comes first.
+    private const val SCREENSAVER_MARGIN_MILLIS = 60_000
 
     // Whether `hour` falls in the night window, which usually wraps past
     // midnight (0 to 6 doesn't, 22 to 6 does). An empty window is never night.
@@ -46,17 +54,29 @@ object ScreenControl {
     // as much as the granted permissions allow.
     fun applyScreenOffDelay(context: Context, settings: Settings) {
         if (settings.screenOffMinutes <= 0) return
-        val millis = settings.screenOffMinutes * 60_000
+
+        // The Portal takes two rounds of the timeout to switch the screen off,
+        // so the written value is half of what the user asked for. Measured:
+        // last presence at 10:56:22, the screensaver ended and the device woke
+        // (instead of sleeping) at 10:58:22, which reset the delay, and it
+        // slept at 11:00:23 -- 4 minutes for a 2 minute setting. Going from an
+        // awake screen it does sleep in one round, so halving can make that
+        // case quicker than asked; the idle case is the one that matters here.
+        val millis = (settings.screenOffMinutes * 60_000 / 2).coerceAtLeast(MINIMUM_SLEEP_MILLIS)
 
         if (canWriteSecureSettings(context)) {
             writeIfDifferent(context, secure = true, SLEEP_TIMEOUT, millis) {
-                Log.i(TAG, "Screen now switches off ${settings.screenOffMinutes} min after the last person is seen")
+                Log.i(
+                    TAG,
+                    "Screen now switches off about ${settings.screenOffMinutes} min after the last" +
+                        " person is seen (sleep_timeout ${millis / 1000}s, applied twice)"
+                )
             }
         }
-        // The screensaver has to be running by then, or presence never keeps
-        // the screen on in the first place
+        // Presence only holds the screen on while the screensaver runs, so it
+        // has to start before the screen would go off, but time out after
         if (AndroidSettings.System.canWrite(context)) {
-            val screensaverAfter = minOf(millis, SCREENSAVER_AFTER_MILLIS)
+            val screensaverAfter = millis + SCREENSAVER_MARGIN_MILLIS
             writeIfDifferent(context, secure = false, AndroidSettings.System.SCREEN_OFF_TIMEOUT, screensaverAfter) {
                 Log.i(TAG, "Screensaver now starts after ${screensaverAfter / 1000}s")
             }

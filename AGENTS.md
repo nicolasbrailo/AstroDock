@@ -44,7 +44,9 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
 - `PictureDescription.kt`: turns metadata into the slideshow's overlay text.
 - `PictureHistory.kt`: the pictures the user can swipe back through.
 - `Settings.kt`: settings stored in SharedPreferences: keys, defaults and valid
-  ranges.
+  ranges. Seconds per picture and the screen-off delay are sliders
+  (`SeekBarPreference`), which store an int, so `load()` converts the string a
+  text input would have left behind the first time it reads one.
 - `SettingsActivity.kt` + `res/layout/activity_settings.xml`: settings with two
   tabs. The Slideshow tab is the preferences in `res/xml/preferences.xml`, whose
   keys must match `Settings.KEY_*`.
@@ -111,7 +113,9 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
 - `ScreenAdminReceiver.kt` + `res/xml/device_admin.xml`: device admin with the
   force-lock policy only, so the app can turn the screen off.
 - `ScreenControl.kt`: the two bits of screen behaviour the app may control. It
-  writes `sleep_timeout` (the screen-off delay, secure, needs the adb grant) and
+  writes `sleep_timeout` (**half** the screen-off delay, because the Portal
+  takes two rounds of it to switch the screen off; secure, needs the adb grant)
+  and
   `screen_off_timeout` (when the screensaver starts, needs both the
   `WRITE_SETTINGS` declaration in the manifest **and** the user's grant:
   `Settings.System.canWrite()` is false without either. It also turns the screen
@@ -273,8 +277,8 @@ documents the API). Keep the two behaving the same.
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album
 (default 0 = all) and seconds per picture (default 30). Under "Screen": how long
-after the Portal last saw someone the screen switches off (0 leaves the system's
-value alone) and an opt-in "turn the screen off at night" with its hours
+after the Portal last saw someone the screen switches off (a slider, 0 leaves
+the system's value alone) and an opt-in "turn the screen off at night" with its hours
 (default 00:00 to 06:00, off).
 
 **Night screen off**. While the slideshow is on screen it checks every 30s (the
@@ -313,6 +317,21 @@ settings reset the slideshow.
   awake screen on. Measured with screensavers off and a 2-minute timeout: the
   screen went dark two seconds after a presence report and blinked back on at
   the next one, with somebody sitting in the room the whole time.
+- **It takes two rounds of the timeout to switch the screen off** when the
+  device is in ambient mode: the first round ends the screensaver and wakes the
+  device, which resets the delay, and the second sleeps. Measured: last presence
+  10:56:22, wake 10:58:22, asleep 11:00:23. `ScreenControl` therefore writes
+  half of what the user asked for. From an awake screen one round is enough, so
+  that case switches off sooner than the setting says.
+- **The screensaver timeout must be longer than the screen-off delay.** While
+  the screensaver runs, the system ends it once `screen_off_timeout` passes
+  without activity; if `sleep_timeout` hasn't elapsed yet it *wakes the device*
+  instead of sleeping, and waking resets the delay. With 60s against a 2 minute
+  delay the Portal alternated screensaver/awake every 60s all night with nobody
+  in the room. `ScreenControl` therefore writes `screen_off_timeout` as the
+  screen-off delay plus a minute. Measured after the fix: `Going to sleep due to
+  timeout` exactly 2 minutes after the last activity, then
+  `Waking up from Dozing ... PresenceManager` when someone came back.
 - **`sleep_timeout` needs re-applying.** Writing it needs `WRITE_SECURE_SETTINGS`
   (`tools/setup-device.sh` grants it with `pm grant`), and the Portal puts its
   own 1200000 back: our first write was reverted within the same second, and the

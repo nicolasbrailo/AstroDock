@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Keys must match the KEY_* constants in Settings.kt -->
-<PreferenceScreen xmlns:app="http://schemas.android.com/apk/res-auto">
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <PreferenceCategory app:title="@string/settings_category_server">
         <EditTextPreference
@@ -28,21 +29,27 @@
             app:dialogMessage="@string/settings_percent_hint"
             app:defaultValue="0"
             app:useSimpleSummaryProvider="true" />
-        <EditTextPreference
+        <SeekBarPreference
+            android:max="300"
             app:key="slide_seconds"
             app:title="@string/settings_slide_seconds"
-            app:dialogMessage="@string/settings_slide_seconds_hint"
+            app:summary="@string/settings_slide_seconds_hint"
             app:defaultValue="30"
-            app:useSimpleSummaryProvider="true" />
+            app:min="5"
+            app:seekBarIncrement="5"
+            app:showSeekBarValue="true" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/settings_category_screen">
-        <EditTextPreference
+        <SeekBarPreference
+            android:max="30"
             app:key="screen_off_minutes"
             app:title="@string/settings_screen_off_minutes"
-            app:dialogMessage="@string/settings_screen_off_minutes_hint"
+            app:summary="@string/settings_screen_off_minutes_hint"
             app:defaultValue="0"
-            app:useSimpleSummaryProvider="true" />
+            app:min="0"
+            app:seekBarIncrement="1"
+            app:showSeekBarValue="true" />
         <SwitchPreferenceCompat
             app:key="night_screen_off"
             app:title="@string/settings_night_screen_off"

@@ -44,21 +44,37 @@ data class Settings(
         // Valid values of each numeric setting; SettingsActivity rejects the rest
         val MAX_PICTURES_RANGE = 0..100_000
         val PERCENT_RANGE = 0..100
-        val SLIDE_SECONDS_RANGE = 1..24 * 60 * 60
-        val SCREEN_OFF_MINUTES_RANGE = 0..240
+        // The sliders' ranges; see res/xml/preferences.xml for their steps
+        val SLIDE_SECONDS_RANGE = 5..300
+        val SCREEN_OFF_MINUTES_RANGE = 0..30
         val HOUR_RANGE = 0..23
 
         fun load(context: Context): Settings {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+
+            // Text inputs store their number as a string
             fun int(key: String, default: Int, range: IntRange): Int =
                 prefs.getString(key, null)?.trim()?.toIntOrNull()?.takeIf { it in range } ?: default
+
+            // Sliders store it as an int. Values written by the text inputs
+            // these replaced are converted the first time they're read.
+            fun slider(key: String, default: Int, range: IntRange): Int {
+                val value = try {
+                    prefs.getInt(key, Int.MIN_VALUE)
+                } catch (e: ClassCastException) {
+                    val text = prefs.getString(key, null)?.trim()?.toIntOrNull()
+                    if (text != null) prefs.edit().putInt(key, text).apply()
+                    text ?: Int.MIN_VALUE
+                }
+                return value.takeIf { it in range } ?: default
+            }
             return Settings(
                 serverUrl = prefs.getString(KEY_SERVER_URL, null)?.trim().orEmpty(),
                 apiKey = prefs.getString(KEY_API_KEY, null)?.trim().orEmpty(),
                 maxPicturesPerAlbum = int(KEY_MAX_PICTURES, DEFAULT_MAX_PICTURES, MAX_PICTURES_RANGE),
                 percentOfAlbum = int(KEY_PERCENT, DEFAULT_PERCENT, PERCENT_RANGE),
-                slideSeconds = int(KEY_SLIDE_SECONDS, DEFAULT_SLIDE_SECONDS, SLIDE_SECONDS_RANGE),
-                screenOffMinutes = int(
+                slideSeconds = slider(KEY_SLIDE_SECONDS, DEFAULT_SLIDE_SECONDS, SLIDE_SECONDS_RANGE),
+                screenOffMinutes = slider(
                     KEY_SCREEN_OFF_MINUTES, DEFAULT_SCREEN_OFF_MINUTES, SCREEN_OFF_MINUTES_RANGE
                 ),
                 nightScreenOff = prefs.getBoolean(KEY_NIGHT_SCREEN_OFF, false),
