@@ -311,18 +311,35 @@ settings reset the slideshow.
   starts; the secure `sleep_timeout` decides when the screen goes off, counted
   from the last presence report. The Slideshow tab's "turn the screen off after"
   writes both (`ScreenControl.applyScreenOffDelay`), keeping the screensaver
-  delay below the screen-off delay.
-- **The screensaver has to stay enabled.** The Portal reports presence as an
-  ambient-mode poke: it keeps a *running screensaver* alive but does not hold an
-  awake screen on. Measured with screensavers off and a 2-minute timeout: the
-  screen went dark two seconds after a presence report and blinked back on at
-  the next one, with somebody sitting in the room the whole time.
-- **It takes two rounds of the timeout to switch the screen off** when the
-  device is in ambient mode: the first round ends the screensaver and wakes the
-  device, which resets the delay, and the second sleeps. Measured: last presence
-  10:56:22, wake 10:58:22, asleep 11:00:23. `ScreenControl` therefore writes
-  half of what the user asked for. From an awake screen one round is enough, so
-  that case switches off sooner than the setting says.
+  delay below the screen-off delay. **0 means "leave it to the Portal"**: the
+  app then puts the Portal's own values back (1200000 / 300000) instead of
+  leaving its last ones behind. Apart from the night rule, which calls
+  `lockNow()`, these settings are the only way the app touches the screen: it
+  holds no wake lock and sets no keep-screen-on flag.
+- **`Notify people presence` in the log does not mean somebody was seen.** The
+  camera logs that line every 30s as a periodic update carrying a value. What
+  counts is whether the Portal then pokes the power manager, and only
+  `dumpsys power` shows that (`mLastUserActivityTimeNoChangeLights`). Measured
+  with the device facing a wall: the log line appeared every 30s while the poke
+  age climbed 141s -> 300s, i.e. no detection at all. A poke does reset the
+  countdown, so the screen stays on while the camera genuinely sees someone.
+  Don't read the log line as presence, and don't expect an app to observe the
+  pokes: only the *arrival edge* is visible, as a screen-on nothing else caused.
+- **The screen going off with somebody in the room** therefore means the camera
+  isn't seeing them, not that presence is being ignored. The Portal's own delay
+  is 20 minutes, long enough to ride that out; anything much shorter blinks.
+- **Screensavers stay enabled** (`tools/setup-device.sh`). Turning them off was
+  tried: `screen_off_timeout` then switches the screen off directly, which looked
+  worse, though that test ran while the camera was seeing nobody, so it proved
+  less than it seemed. Ambient mode is also where the Portal's own slideshow
+  lives, so ours belongs there too.
+- **From ambient mode it took two rounds of the timeout to switch the screen
+  off:** the first round ended the screensaver and woke the device, which reset
+  the delay, and the second slept. Measured once, with nobody in view: last
+  detection 10:56:22, wake 10:58:22, asleep 11:00:23, for a 2 minute setting.
+  `ScreenControl` therefore writes half of what the user asked for. From an
+  awake screen one round was enough, so that case switches off sooner than the
+  setting says. Worth re-measuring if the delay ever feels wrong.
 - **The screensaver timeout must be longer than the screen-off delay.** While
   the screensaver runs, the system ends it once `screen_off_timeout` passes
   without activity; if `sleep_timeout` hasn't elapsed yet it *wakes the device*

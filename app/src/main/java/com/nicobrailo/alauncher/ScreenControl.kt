@@ -32,6 +32,10 @@ object ScreenControl {
     // Half of a very short setting would leave no time to walk up to the device
     private const val MINIMUM_SLEEP_MILLIS = 30_000
 
+    // What the Portal ships with
+    private const val PORTAL_SLEEP_MILLIS = 1_200_000
+    private const val PORTAL_SCREENSAVER_MILLIS = 300_000
+
     // The screensaver timeout has to stay *longer* than the screen-off delay.
     // While the screensaver runs, the system ends it once this timeout passes
     // without activity, and if the screen-off delay hasn't elapsed yet it wakes
@@ -53,7 +57,17 @@ object ScreenControl {
     // switching the screen off. Does nothing if the setting is 0, and only does
     // as much as the granted permissions allow.
     fun applyScreenOffDelay(context: Context, settings: Settings) {
-        if (settings.screenOffMinutes <= 0) return
+        // 0 hands the screen back to the Portal, which is usually the better
+        // deal: its presence detection decides when to switch the screen off,
+        // and the app treats "screen on" as "somebody is in the room". Any
+        // shorter delay we set is fought over, because the Portal's presence
+        // reports don't restart the countdown the way a touch does, so the
+        // screen goes dark with somebody sitting in front of it and presence
+        // wakes it seconds later.
+        if (settings.screenOffMinutes <= 0) {
+            restorePortalDefaults(context)
+            return
+        }
 
         // The Portal takes two rounds of the timeout to switch the screen off,
         // so the written value is half of what the user asked for. Measured:
@@ -79,6 +93,26 @@ object ScreenControl {
             val screensaverAfter = millis + SCREENSAVER_MARGIN_MILLIS
             writeIfDifferent(context, secure = false, AndroidSettings.System.SCREEN_OFF_TIMEOUT, screensaverAfter) {
                 Log.i(TAG, "Screensaver now starts after ${screensaverAfter / 1000}s")
+            }
+        }
+    }
+
+    // Puts back what the Portal ships with, so turning the setting off really
+    // does hand the screen back rather than leaving our last values behind
+    private fun restorePortalDefaults(context: Context) {
+        if (canWriteSecureSettings(context)) {
+            writeIfDifferent(context, secure = true, SLEEP_TIMEOUT, PORTAL_SLEEP_MILLIS) {
+                Log.i(TAG, "Screen off delay back to the Portal's ${PORTAL_SLEEP_MILLIS / 60_000} min")
+            }
+        }
+        if (AndroidSettings.System.canWrite(context)) {
+            writeIfDifferent(
+                context,
+                secure = false,
+                AndroidSettings.System.SCREEN_OFF_TIMEOUT,
+                PORTAL_SCREENSAVER_MILLIS,
+            ) {
+                Log.i(TAG, "Screensaver delay back to the Portal's ${PORTAL_SCREENSAVER_MILLIS / 60_000} min")
             }
         }
     }

@@ -71,7 +71,7 @@
 
     <string name="settings_category_screen">Screen</string>
     <string name="settings_screen_off_minutes">Turn the screen off after (minutes)</string>
-    <string name="settings_screen_off_minutes_hint">Minutes after the Portal last saw someone in the room before the screen switches off. 0 leaves the system settings alone. Needs the screen off delay in the System tab.</string>
+    <string name="settings_screen_off_minutes_hint">Minutes after the Portal last saw someone in the room before the screen switches off. 0 leaves it to the Portal, which is the steadier choice: its own delay is about 20 minutes, and shorter ones make the screen blink off while somebody is in the room. Needs the screen off delay in the System tab.</string>
     <string name="settings_night_screen_off">Turn the screen off at night</string>
     <string name="settings_night_screen_off_hint">Switches the screen off during the hours below, even when someone is in the room. A touch keeps it on for a few minutes. Needs \"Turn the screen off\" in the System tab.</string>
     <string name="settings_night_start">Night starts at (hour)</string>
