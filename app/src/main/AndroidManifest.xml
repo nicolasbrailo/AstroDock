@@ -47,7 +47,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Alauncher"
+        android:theme="@style/Theme.AstroDock"
         android:usesCleartextTraffic="true"
         tools:ignore="UnusedAttribute">
 
@@ -59,7 +59,7 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:stateNotNeeded="true"
-            android:theme="@style/Theme.Alauncher.Fullscreen">
+            android:theme="@style/Theme.AstroDock.Fullscreen">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -98,7 +98,7 @@
         <activity
             android:name=".AppListActivity"
             android:exported="false"
-            android:theme="@style/Theme.Alauncher.Fullscreen" />
+            android:theme="@style/Theme.AstroDock.Fullscreen" />
 
         <!-- Lets the system installer read the APKs we download -->
         <provider

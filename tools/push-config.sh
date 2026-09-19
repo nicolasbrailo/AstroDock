@@ -14,7 +14,7 @@ if [[ $# -lt 2 || $# -gt 5 ]]; then
   exit 1
 fi
 
-PKG=com.nicobrailo.alauncher
+PKG=com.nicobrailo.astrodock
 SERVER_URL=$1
 API_KEY=$2
 MAX_PICTURES=${3:-20}

@@ -1,4 +1,4 @@
-# alauncher
+# astrodock
 
 Android app for a Facebook Portal Go (Android 10, API 29, arm64, 1280x800, no
 Google Play Services). It shows a full screen slideshow of random pictures from
@@ -16,7 +16,7 @@ it up to date when the design changes.
 - `./gradlew assembleDebug`: build. `./gradlew testDebugUnitTest`: unit tests
   (JVM, no device needed).
 - `adb install -r app/build/outputs/apk/debug/app-debug.apk` then
-  `adb shell am start -n com.nicobrailo.alauncher/.SlideshowActivity`.
+  `adb shell am start -n com.nicobrailo.astrodock/.SlideshowActivity`.
 - `tools/push-config.sh SERVER_URL API_KEY [MAX_PICTURES [PERCENT [SLIDE_SECONDS]]]`:
   pushes the settings to the device and restarts the app, so they don't have
   to be typed on the touch screen. Only works with debug builds, since it uses
@@ -32,7 +32,7 @@ minSdk 29, Java 11. Views and XML layouts, not Compose.
 
 ## Code map
 
-All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
+All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
 
 - `immich/ImmichClient.kt`: Immich REST client (OkHttp + `org.json`). Lists
   albums, lists an album's images (paginated `POST /search/metadata`), fetches
@@ -104,7 +104,7 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   places and they hand over in either order, so each reports itself by name and
   `slideshow_active` is true while either is showing. The topic prefix and the client id default
   to the device's own name (`device_name`, e.g. `portalgo/`), sanitised for
-  topics: "alauncher" is the software, the unit is the Portal. Each device needs
+  topics: "astrodock" is the software, the unit is the Portal. Each device needs
   its own prefix, or they overwrite each other's retained topics.
 - `SystemSettingsFragment.kt`: the System tab. One item per thing the app needs
   from the system, with its state and a button that opens the system dialog.
@@ -153,7 +153,7 @@ All sources are in `app/src/main/java/com/nicobrailo/alauncher/`.
   from `onWindowFocusChanged`, not only at startup. It also lays the content out
   at full size regardless of the bars (`setDecorFitsSystemWindows(false)`, and
   the screensaver does the same), so a bar that appears for a moment doesn't
-  shrink and shift the picture. `Theme.Alauncher.Fullscreen` asks for a full
+  shrink and shift the picture. `Theme.AstroDock.Fullscreen` asks for a full
   screen window up front and turns the window animation off: hiding the bars in
   code alone made the Portal's status bar flash in every time the screensaver
   handed over to the home screen.
@@ -248,7 +248,7 @@ documents the API). Keep the two behaving the same.
   album, artwork when the app provides one) with previous, play/pause and next.
   The screensaver shows the text but no buttons, since a touch ends it. Grant
   notification access in the System tab, or with
-  `adb shell cmd notification allow_listener com.nicobrailo.alauncher/com.nicobrailo.alauncher.media.MediaListenerService`
+  `adb shell cmd notification allow_listener com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService`
   (`disallow_listener` to revoke).
 - Errors are shown in a text overlay over the picture.
 - When the activity starts again, it reloads the settings. If they changed, it
@@ -382,7 +382,7 @@ settings reset the slideshow.
   Don't rely on it; to control when the screen goes off, use the device admin
   (`ScreenAdminReceiver`) and `DevicePolicyManager.lockNow()`.
 - Declaring HOME means that, until the user picks a default home app, pressing
-  Home shows a chooser between alauncher and the Portal launcher.
+  Home shows a chooser between astrodock and the Portal launcher.
 - Some apps leave no way back to the launcher. With `com.whatsapp` in front the
   Portal's SystemUI still reports its Back and Home buttons as visible, but
   nothing is drawn and taps in that area do nothing; Jellyfin and Spotify, also

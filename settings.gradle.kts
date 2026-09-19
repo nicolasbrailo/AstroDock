@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "alauncher"
+rootProject.name = "AstroDock"
 include(":app")

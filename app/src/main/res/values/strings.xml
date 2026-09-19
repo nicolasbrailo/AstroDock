@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">alauncher</string>
+    <string name="app_name">AstroDock</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_category_server">Immich server</string>
@@ -35,20 +35,20 @@
     <string name="system_home_button">Choose home screen</string>
 
     <string name="system_dream_title">Screensaver</string>
-    <string name="system_dream_description">Show the slideshow when the Portal is idle. Pick alauncher in the list that opens.</string>
+    <string name="system_dream_description">Show the slideshow when the Portal is idle. Pick AstroDock in the list that opens.</string>
     <string name="system_dream_button">Open screensaver settings</string>
 
     <string name="system_admin_title">Turn the screen off</string>
     <string name="system_admin_description">Lets the app switch the screen off itself, instead of waiting for the system timeout.</string>
     <string name="system_admin_button">Activate</string>
-    <string name="system_admin_explanation">alauncher uses this only to turn the screen off.</string>
+    <string name="system_admin_explanation">AstroDock uses this only to turn the screen off.</string>
 
     <string name="system_write_settings_title">Change system settings</string>
     <string name="system_write_settings_description">Lets the app change how long the Portal waits before starting the screensaver.</string>
     <string name="system_write_settings_button">Allow</string>
 
     <string name="system_sleep_timeout_title">Set the screen off delay (now %1$s)</string>
-    <string name="system_sleep_timeout_description">Lets the app keep the screen off delay at what the Slideshow tab says; the Portal resets it otherwise. Only adb can allow this:\n\nadb shell pm grant com.nicobrailo.alauncher android.permission.WRITE_SECURE_SETTINGS</string>
+    <string name="system_sleep_timeout_description">Lets the app keep the screen off delay at what the Slideshow tab says; the Portal resets it otherwise. Only adb can allow this:\n\nadb shell pm grant com.nicobrailo.astrodock android.permission.WRITE_SECURE_SETTINGS</string>
 
     <string name="app_menu_app_info">App info</string>
     <string name="app_menu_uninstall">Uninstall</string>
@@ -66,7 +66,7 @@
     <string name="media_previous">Previous</string>
 
     <string name="system_media_title">Media controls</string>
-    <string name="system_media_description">Lets the slideshow show and control what other apps are playing, e.g. Jellyfin. Turn alauncher on in the list that opens.</string>
+    <string name="system_media_description">Lets the slideshow show and control what other apps are playing, e.g. Jellyfin. Turn AstroDock on in the list that opens.</string>
     <string name="system_media_button">Open notification access</string>
 
     <string name="settings_category_screen">Screen</string>
@@ -97,11 +97,11 @@
     <string name="install_button_install">Download and install</string>
     <string name="install_button_page">Open download page</string>
     <string name="install_button_open">Open</string>
-    <string name="install_needs_permission">First allow alauncher to install apps, then try again.</string>
+    <string name="install_needs_permission">First allow AstroDock to install apps, then try again.</string>
     <string name="install_no_browser">No browser to open %1$s</string>
 
     <string name="system_install_title">Install unknown apps</string>
-    <string name="system_install_description">Lets alauncher install the apps offered in the Apps tab. The system still asks before each install.</string>
+    <string name="system_install_description">Lets AstroDock install the apps offered in the Apps tab. The system still asks before each install.</string>
     <string name="system_install_button">Allow</string>
 
     <string name="settings_tab_mqtt">MQTT</string>

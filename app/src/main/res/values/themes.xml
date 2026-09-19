@@ -1,6 +1,6 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Theme.Alauncher" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
+    <style name="Theme.AstroDock" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
         <!-- Primary brand color. -->
         <item name="colorPrimary">@color/purple_500</item>
         <item name="colorPrimaryVariant">@color/purple_700</item>
@@ -15,7 +15,7 @@
     </style>
 
     <!-- Slideshow: no action bar, black behind the pictures -->
-    <style name="Theme.Alauncher.Fullscreen" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+    <style name="Theme.AstroDock.Fullscreen" parent="Theme.MaterialComponents.DayNight.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
         <!-- The window is created full screen, rather than hiding the bars once
              it is already on screen: the system clears those flags whenever a
@@ -28,7 +28,7 @@
     </style>
 
     <!-- Dark dialogs, so the white app labels in a folder stay readable -->
-    <style name="Theme.Alauncher.Dialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
+    <style name="Theme.AstroDock.Dialog" parent="ThemeOverlay.MaterialComponents.Dialog.Alert">
         <item name="android:background">#FF202020</item>
         <item name="android:textColorPrimary">@android:color/white</item>
         <item name="android:textColorSecondary">#FFCCCCCC</item>

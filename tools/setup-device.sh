@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
-# Sets the Portal up for alauncher: everything an app can't do for itself.
+# Sets the Portal up for astrodock: everything an app can't do for itself.
 # Safe to run again at any time; it only sets values, and prints what the
 # device looks like afterwards.
 #
 # Usage: tools/setup-device.sh
 #
-# It makes alauncher the home screen and the screensaver, lets it write the
+# It makes astrodock the home screen and the screensaver, lets it write the
 # secure setting that decides when the screen switches off, hides the Portal's
 # floating bug-report pill, and turns off the Portal's app verifier, which only
 # accepts apps signed by Facebook and fails every other install with "App
 # certificate rejected" (adb installs are never verified). To undo any of it:
 #
 #   adb shell cmd package set-home-activity com.facebook.alohaapps.launcher
-#   adb shell pm revoke com.nicobrailo.alauncher android.permission.WRITE_SECURE_SETTINGS
+#   adb shell pm revoke com.nicobrailo.astrodock android.permission.WRITE_SECURE_SETTINGS
 #   adb shell settings put secure screensaver_components \
 #     com.facebook.alohaapps.launcher/com.facebook.aloha.app.home.touch.HomeDreamService
 #   adb shell appops set com.facebook.aloha.system.services SYSTEM_ALERT_WINDOW allow
@@ -27,7 +27,7 @@ if [[ $# -ne 0 ]]; then
   exit 1
 fi
 
-PKG=com.nicobrailo.alauncher
+PKG=com.nicobrailo.astrodock
 # Draws the floating bug-report pill. There's no setting for it, so the overlay
 # permission is taken away instead, and the package restarted to drop the
 # window it already has.
