@@ -21,6 +21,15 @@ it up to date when the design changes.
   pushes the settings to the device and restarts the app, so they don't have
   to be typed on the touch screen. Only works with debug builds, since it uses
   `run-as`.
+- `tools/force-uninstall.sh [PACKAGE]`: uninstalls the app. Needed because
+  `adb uninstall` fails with `DELETE_FAILED_DEVICE_POLICY_MANAGER` once the
+  user has granted the device admin: an active admin can't be uninstalled, and
+  `dpm remove-active-admin` only removes an admin marked `testOnly`. The system
+  does drop an admin whose receiver stops existing, so the script installs a
+  component-less APK with the same package name over the app, then uninstalls
+  that. It signs it with the debug keystore, so, like `push-config.sh`, it only
+  works on debug builds. It also takes the predecessor
+  (`com.nicobrailo.alauncher`) as an argument.
 - If a screenshot is all white or black, the Portal's screen is probably off:
   `adb shell input keyevent KEYCODE_WAKEUP`.
 - Logs: `adb logcat -s SlideshowActivity RandomAlbumPicker` (every swipe logs
