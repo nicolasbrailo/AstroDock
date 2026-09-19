@@ -35,7 +35,7 @@ class ApkInstaller(private val context: Context) {
         File(File(context.cacheDir, "apks"), "${app.packageName}.apk").delete()
     }
 
-    private val http = OkHttpClient.Builder()
+    val http = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(60, TimeUnit.SECONDS)
         .build()

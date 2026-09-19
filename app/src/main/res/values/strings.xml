@@ -99,6 +99,11 @@
     <string name="install_button_open">Open</string>
     <string name="install_needs_permission">First allow AstroDock to install apps, then try again.</string>
     <string name="install_no_browser">No browser to open %1$s</string>
+    <string name="install_current_version">Version %1$s</string>
+    <string name="install_button_check_update">Check for update</string>
+    <string name="install_checking_update">Checking…</string>
+    <string name="install_no_update">Up to date</string>
+    <string name="install_update_available">Update available: %1$s</string>
 
     <string name="system_install_title">Install unknown apps</string>
     <string name="system_install_description">Lets AstroDock install the apps offered in the Apps tab. The system still asks before each install.</string>

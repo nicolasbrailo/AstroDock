@@ -14,6 +14,7 @@ data class Installable(
     val description: String,
     val apkUrl: String?,
     val pageUrl: String,
+    val githubRepo: String? = null,
 ) {
     fun isInstalled(context: Context): Boolean = try {
         context.packageManager.getPackageInfo(packageName, 0)
@@ -25,6 +26,14 @@ data class Installable(
 
 // The apps offered in the Apps tab of the settings
 val INSTALLABLE_APPS = listOf(
+    Installable(
+        name = "AstroDock",
+        packageName = "com.nicobrailo.astrodock",
+        description = "This home screen replacement app. Check for updates and install them directly from GitHub releases.",
+        apkUrl = "https://github.com/nicolasbrailo/AstroDock/releases/latest/download/app-release.apk",
+        pageUrl = "https://github.com/nicolasbrailo/AstroDock",
+        githubRepo = "nicolasbrailo/AstroDock",
+    ),
     Installable(
         name = "F-Droid",
         packageName = "org.fdroid.fdroid",

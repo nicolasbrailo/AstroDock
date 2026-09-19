@@ -18,7 +18,13 @@ import androidx.lifecycle.lifecycleScope
 import com.nicobrailo.astrodock.apps.ApkInstaller
 import com.nicobrailo.astrodock.apps.INSTALLABLE_APPS
 import com.nicobrailo.astrodock.apps.Installable
+import okhttp3.Request
+import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import android.content.pm.PackageManager
+import com.nicobrailo.astrodock.BuildConfig
 import java.io.IOException
 
 // Apps worth having on a Portal, which has no app store. Each row says whether
@@ -83,20 +89,61 @@ class InstallAppsFragment : Fragment() {
         val installed = app.isInstalled(requireContext())
         // The download is no use once the app is there
         if (installed) installer.forget(app)
-        status.setText(if (installed) R.string.install_installed else R.string.install_not_installed)
 
-        when {
-            installed -> {
-                button.setText(R.string.install_button_open)
-                button.setOnClickListener { open(app) }
+        if (installed && app.githubRepo != null) {
+            status.text = getString(R.string.install_current_version, BuildConfig.VERSION_NAME)
+            // Add a "Check for update" button action or check automatically / conditionally.
+            // Let's add a sub-action button or check right here if needed, or handle it via button action.
+            button.setText(R.string.install_button_check_update)
+            button.setOnClickListener {
+                button.isEnabled = false
+                status.setText(R.string.install_checking_update)
+                viewLifecycleOwner.lifecycleScope.launch {
+                    try {
+                        val latestTag = withContext(Dispatchers.IO) {
+                            val url = "https://api.github.com/repos/${app.githubRepo}/releases/latest"
+                            val req = Request.Builder().url(url).header("Accept", "application/json").build()
+                            installer.http.newCall(req).execute().use { resp ->
+                                if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+                                val obj = JSONObject(resp.body.string())
+                                obj.optString("tag_name", "").trimStart('v')
+                            }
+                        }
+                        if (latestTag.isNotEmpty() && latestTag != BuildConfig.VERSION_NAME) {
+                            status.text = getString(R.string.install_update_available, latestTag)
+                            button.setText(R.string.install_button_install)
+                            button.isEnabled = true
+                            button.setOnClickListener { download(app, status, button) }
+                        } else {
+                            status.setText(R.string.install_no_update)
+                            button.setText(R.string.install_button_open)
+                            button.isEnabled = true
+                            button.setOnClickListener { open(app) }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Can't check updates for ${app.name}", e)
+                        status.text = getString(R.string.install_failed, e.message)
+                        button.isEnabled = true
+                        button.setOnClickListener { open(app) }
+                    }
+                }
             }
-            app.apkUrl != null -> {
-                button.setText(R.string.install_button_install)
-                button.setOnClickListener { download(app, status, button) }
-            }
-            else -> {
-                button.setText(R.string.install_button_page)
-                button.setOnClickListener { openInBrowser(app.pageUrl) }
+        } else {
+            status.setText(if (installed) R.string.install_installed else R.string.install_not_installed)
+
+            when {
+                installed -> {
+                    button.setText(R.string.install_button_open)
+                    button.setOnClickListener { open(app) }
+                }
+                app.apkUrl != null -> {
+                    button.setText(R.string.install_button_install)
+                    button.setOnClickListener { download(app, status, button) }
+                }
+                else -> {
+                    button.setText(R.string.install_button_page)
+                    button.setOnClickListener { openInBrowser(app.pageUrl) }
+                }
             }
         }
         return view
