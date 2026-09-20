@@ -25,13 +25,15 @@ import androidx.fragment.app.Fragment
 // dialog, the device admin dialog, the screensaver list and the "modify system
 // settings" screen.
 class SystemSettingsFragment : Fragment() {
-    // One requirement: shown when it isn't set up, with the intent that sets it
+    // One requirement: shown when it isn't set up, with the intent that sets it,
+    // or, for the one the app can set itself, the action that does it
     private class Item(
         val title: String,
         val description: String,
         val buttonText: String?,
         val done: Boolean,
         val intent: Intent?,
+        val action: (() -> Unit)? = null,
     )
 
     private lateinit var items: LinearLayout
@@ -50,6 +52,10 @@ class SystemSettingsFragment : Fragment() {
     // Rebuilt every time, so coming back from a system dialog shows the result
     override fun onResume() {
         super.onResume()
+        refresh()
+    }
+
+    private fun refresh() {
         items.removeAllViews()
         for (item in requirements()) show(item)
     }
@@ -64,6 +70,7 @@ class SystemSettingsFragment : Fragment() {
         val screensavers = AndroidSettings.Secure
             .getString(context.contentResolver, "screensaver_components")
         val sleepTimeout = AndroidSettings.Secure.getInt(context.contentResolver, "sleep_timeout", -1)
+        val contrastOn = TextContrast.isEnabled(context)
 
         return listOf(
             Item(
@@ -145,6 +152,27 @@ class SystemSettingsFragment : Fragment() {
                 done = ScreenControl.canWriteSecureSettings(context),
                 intent = null,
             ),
+            // The only one the app switches itself, so it has no system screen
+            // to open. It rides on the same grant as the delay above, and
+            // without it there is nothing to tap.
+            Item(
+                title = getString(R.string.system_contrast_title),
+                description = getString(R.string.system_contrast_description),
+                buttonText = getString(
+                    if (contrastOn) R.string.system_contrast_button_off
+                    else R.string.system_contrast_button_on
+                ),
+                done = contrastOn,
+                intent = null,
+                action = if (ScreenControl.canWriteSecureSettings(context)) {
+                    {
+                        TextContrast.setEnabled(context, !contrastOn)
+                        refresh()
+                    }
+                } else {
+                    null
+                },
+            ),
         )
     }
 
@@ -166,13 +194,15 @@ class SystemSettingsFragment : Fragment() {
         view.findViewById<TextView>(R.id.description).text = item.description
 
         val button = view.findViewById<Button>(R.id.action)
+        val onClick: (() -> Unit)? =
+            item.action ?: item.intent?.let { intent -> { systemDialog.launch(intent) } }
         // Nothing to do when it's already set up, except for screens worth
         // revisiting (the screensaver list can also be used to unset it)
-        if (item.intent == null || (item.done && item.buttonText == null)) {
+        if (onClick == null || (item.done && item.buttonText == null)) {
             button.visibility = View.GONE
         } else {
             button.text = item.buttonText
-            button.setOnClickListener { systemDialog.launch(item.intent) }
+            button.setOnClickListener { onClick() }
         }
         items.addView(view)
     }

@@ -62,6 +62,11 @@
     <string name="system_sleep_timeout_title">Set the screen off delay (now %1$s)</string>
     <string name="system_sleep_timeout_description">Lets the app keep the screen off delay at what the Slideshow tab says; the Portal resets it otherwise. Only adb can allow this:\n\nadb shell pm grant com.nicobrailo.astrodock android.permission.WRITE_SECURE_SETTINGS</string>
 
+    <string name="system_contrast_title">High contrast text</string>
+    <string name="system_contrast_description">Outlines text everywhere on the Portal, so it can\'t disappear into its background. The Portal\'s theme paints the install dialog\'s text the same colour as the page behind it, which makes installing anything, or updating AstroDock, look like a blank white screen. Needs the adb grant above.</string>
+    <string name="system_contrast_button_on">Turn on</string>
+    <string name="system_contrast_button_off">Turn off</string>
+
     <string name="app_menu_app_info">App info</string>
     <string name="app_menu_uninstall">Uninstall</string>
     <string name="app_menu_remove_from_folder">Take out of folder</string>

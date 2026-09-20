@@ -187,7 +187,14 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   role dialog identifies the caller that way and closes immediately otherwise.
   That dialog is the only thing in the app that needs API 29 (`RoleManager`),
   so `homeRoleIntent` returns null below that and the home screen settings,
-  where the user picks the launcher by hand, are opened instead.
+  where the user picks the launcher by hand, are opened instead. An `Item` with
+  an `action` instead of an `intent` is one the app can set itself, and its
+  button runs that and rebuilds the list rather than opening anything; high
+  contrast text is the only one.
+- `TextContrast.kt`: the `high_text_contrast_enabled` switch behind that item.
+  It is a secure setting, so it rides on the same adb grant as `sleep_timeout`
+  and does nothing without it, which is why the System tab shows the two next
+  to each other.
 - `ScreenAdminReceiver.kt` + `res/xml/device_admin.xml`: device admin with the
   force-lock policy only, so the app can turn the screen off.
 - `ScreenControl.kt`: the two bits of screen behaviour the app may control. It
@@ -260,9 +267,12 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   Which apps get one is worked out automatically: `LauncherModel` reads each
   app's theme for `windowLightStatusBar`, because the Portal draws its Back and
   Home buttons in white and doesn't darken them, so they vanish over such an app
-  (F-Droid is one). Apps that ask for it in code instead are missed (WhatsApp
-  is one), so the long-press menu can force the button on or off per app, and
-  that choice wins over the automatic one.
+  (F-Droid is one). Apps that ask for it in code instead are missed, since
+  their manifest theme says nothing, so `HomeButtonApps.ALWAYS` lists them by
+  package name and they get a button regardless of what the theme said;
+  `com.whatsapp` is there, being the app the feature was written for. The
+  long-press menu can still force the button on or off per app, and that choice
+  wins over both the list and the automatic detection.
 
 Unit tests are in `app/src/test/`. `android.util.Log` is a no-op there
 (`unitTests.isReturnDefaultValues`), and `org.json` is a stub, so code that
@@ -351,10 +361,14 @@ documents the API). Keep the two behaving the same.
   folder; dropping it on a folder adds it. A long-press that never moves shows a
   menu instead: app info and uninstall for an app (hidden for system apps and
   other profiles), rename and ungroup for a folder. Inside an open folder, the
-  menu can also take an app out.
+  menu can also take an app out. Uninstalling needs `REQUEST_DELETE_PACKAGES`
+  in the manifest: without it `ACTION_DELETE` still starts the system's
+  uninstaller, which closes again in the same instant, so the menu item looks
+  like it does nothing and only logcat says why.
 - Entries are sorted by name; there's no manual ordering.
 - The long-press menu also offers a home button over that app (see
-  `HomeButtonService`), which is off for every app until the user asks for it.
+  `HomeButtonService`), which is off for every app except the ones the launcher
+  detects and the ones `HomeButtonApps.ALWAYS` names.
 
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album
@@ -462,10 +476,31 @@ settings reset the slideshow.
   (`package_verifier_enable`, a global setting, so adb only). Installs over adb
   are never verified (`verifier_verify_adb_installs=0`), which is why this app
   installs fine.
+- **The system's install dialog draws its text in the colour of whatever is
+  behind it**, so it looks like a blank white page and the install can only be
+  confirmed by tapping where the buttons would be. The culprit is the Portal's
+  theme for the framework, the RRO `com.facebook.aloha.rro.niu.android`
+  (`/vendor/overlay/NiuDeviceDefaultTheme/NiuDeviceDefaultOverlay.apk`), which
+  `com.android.packageinstaller` inherits like every other app. The dialog is
+  fine underneath: `uiautomator dump` reads every string and the buttons take
+  taps. Measured by counting colours in the button strip: exactly one (pure
+  white, so no glyphs) with the RRO on, the stock light dialog with it off. Its
+  `mIsStatic` is false, so `cmd overlay disable` works and `enable` puts it
+  back; `tools/setup-device.sh` disables it. Night mode makes no difference, and
+  the uninstall dialog in the same package is fine, being an AlertDialog theme.
+  This hits the app's own Apps tab and its self-update too, since
+  `ApkInstaller` starts the same activity. Whether the Portal re-enables its
+  overlay on boot hasn't been measured, which is why the script also turns on
+  `high_text_contrast_enabled`: that outlines every string, so nothing can go
+  invisible even if the overlay comes back. That half is a secure setting, so
+  the app can do it too, and the System tab has a switch for it
+  (`TextContrast`); the overlay needs `CHANGE_OVERLAY_PACKAGES`, which is
+  `signature|privileged` with no `development` flag, so `pm grant` can't hand
+  it over and adb stays the only way to that one.
 - `tools/setup-device.sh` takes no arguments: it applies everything an app can't
-  set for itself (home screen, screensaver, bug pill, app verifier) and prints
-  the result. Its header lists the commands to undo each one. Everything else is
-  granted from the System tab.
+  set for itself (home screen, screensaver, bug pill, app verifier, the theme
+  that hides the install dialog) and prints the result. Its header lists the
+  commands to undo each one. Everything else is granted from the System tab.
 - `sleep_timeout` does not stick: it was back at the Portal's 1200000 twice
   after the device dreamt and woke again, so something on the Portal resets it.
   Don't rely on it; to control when the screen goes off, use the device admin

@@ -14,8 +14,11 @@ class HomeButtonApps(context: Context) {
     // `detected` is what the launcher worked out on its own
     // (LauncherApp.wantsLightStatusBar)
     fun shouldShow(packageName: String, detected: Boolean): Boolean =
-        override(packageName) ?: detected
+        override(packageName) ?: (packageName in ALWAYS || detected)
 
+    // What the user asked for, if they asked at all. It is kept apart from the
+    // rest of the decision because their choice wins over both ALWAYS and the
+    // detection.
     fun override(packageName: String): Boolean? = when {
         packageName in packages(ON) -> true
         packageName in packages(OFF) -> false
@@ -34,5 +37,12 @@ class HomeButtonApps(context: Context) {
     private companion object {
         const val ON = "packages"
         const val OFF = "packages_off"
+
+        // Apps the detection provably can't catch, because they set the light
+        // status bar in code and their manifest theme says nothing. WhatsApp is
+        // the app the whole feature was written for, and without this it needed
+        // the long-press menu on every device, which is easy to forget and is
+        // lost whenever the app's data is cleared.
+        val ALWAYS = setOf("com.whatsapp")
     }
 }

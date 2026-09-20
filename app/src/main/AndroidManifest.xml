@@ -6,6 +6,12 @@
     <!-- Offering apps to install (Apps tab of the settings). The user still
          confirms every install in the system's own screen. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Uninstalling from the app list's long-press menu. Without it the
+         system's uninstall dialog opens and closes again in the same instant,
+         logging "does not have android.permission.REQUEST_DELETE_PACKAGES", so
+         the menu item looks like it does nothing. The user still confirms in
+         that dialog. -->
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Keeps the screen on while an install is in progress -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 

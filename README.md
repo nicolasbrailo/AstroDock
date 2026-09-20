@@ -4,7 +4,7 @@ A lightweight home screen and screensaver for the Facebook Portal Go.
 
 ## Features
 
-* **Immich Slideshow**: Full-screen photos with metadata, gesture history, and people/EXIF overlays, from all of an Immich server or a filtered set of its albums.
+* **Immich Slideshow**: Full-screen photos with metadata, gesture history, and people/EXIF overlays.
 * **Home & Screensaver**: Integrated launcher and system "Dream" service for a seamless experience.
 * **App Launcher**: Customizable grid with folders and drag-and-drop support.
 * **App Catalogue**: Built-in installer to download and update Portal-compatible apps.
@@ -112,71 +112,14 @@ admin has been granted, because an active admin can't be uninstalled. Use
 
 ## Album filter
 
-By default the slideshow draws from every album the API key can see. The album
-filter narrows that down, by album name and by when the pictures in an album
-were taken — a device in the kitchen can show `kitchen-*`, another one only the
-last few years.
-
-Immich itself can't do this: `GET /albums` only matches an exact name or an
-owner. The album list is one request that already carries each album's name and
-the dates of its oldest and newest picture, so the filter is applied to that
-list and costs no extra requests.
-
-### Settings
-
-Settings → Slideshow → **Album filter**:
-
-| Setting | Meaning |
-| --- | --- |
-| Only these albums | Names to show. Empty shows every album. |
-| Except these albums | Names to leave out. Checked after the list above, so it wins. |
-| From year | Only albums holding pictures from this year onwards. 0 means no limit. |
-| To year | Only albums holding pictures up to this year. 0 means no limit. |
-
-Names are comma separated patterns, matched against the **whole** album name
-and ignoring case. `*` stands for any run of characters and `?` for exactly one;
-everything else is literal, so `Trip (2019)` can be written as it is. For
-example, `holidays *, Pets` keeps `Holidays 2019` and `Pets`, but not
-`Pets and dogs`.
-
-The years are an overlap test: an album is kept if any of its pictures fall in
-the range, so one running 2010–2026 is kept by "2019 to 2021". Two things follow
-from that, both worth knowing:
-
-* A *reversed* range is not empty. "From 2020, to 2019" asks for albums that
-  end in 2020 or later **and** start in 2019 or earlier — the albums straddling
-  that boundary, which is rarely what anyone means.
-* Album names say nothing about dates. An album called `2024 - office` whose
-  pictures actually run from 2019 is kept by a 2019 filter.
-
-An album the server gives no dates for is left out as soon as either year is
-set. If the filter matches nothing, the slideshow says so over the pictures
-instead of going blank.
-
-### From a computer
-
-`tools/push-config.sh` sets the filter over adb, so it doesn't have to be typed
-on the touch screen. It only replaces the settings named on the command line:
-
-```sh
-tools/push-config.sh --album-include 'kitchen-*' --album-from-year 2019
-tools/push-config.sh --album-include ''          # drop that part of the filter
-tools/push-config.sh --show                      # what the device has now
-```
-
-### Over MQTT
-
-With the MQTT tab set up, publishing to `<prefix>cmd/ambience/set_album_filter`
-changes the filter while the slideshow is running. `<prefix>` is the device's
-topic prefix, e.g. `portalgo/`.
+Settings → Slideshow → **Album filter** chooses which albums the slideshow uses:
+names to show and to leave out (comma separated, `*` and `?` match the whole
+name), and a year range over the dates of each album's pictures (0 = no limit).
+Also settable with `tools/push-config.sh --album-include ...`, or over MQTT:
 
 ```sh
 mosquitto_pub -h BROKER -t 'portalgo/cmd/ambience/set_album_filter' \
-  -m '{"name":"kitchen-*","exclude":"Screenshots","from_year":2019,"to_year":2021}'
+  -m '{"name":"kitchen-*","from_year":2019,"to_year":2021}'
 ```
 
-Every field is optional and the payload replaces the whole filter, so anything
-left out is cleared and `{}` shows every album again. The new filter is saved
-like any other setting, so it survives a restart and the settings screen agrees
-with it. Don't publish the message retained: retained commands are ignored, or
-they would be replayed on every reconnect.
+The payload replaces the whole filter, so `{}` shows every album again.
