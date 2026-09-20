@@ -4,10 +4,10 @@
 #
 # It reads what is on the device first and only replaces the settings named on
 # the command line, so pushing one of them leaves the rest alone, including the
-# ones this script knows nothing about (the screen and MQTT tabs). Use --reset
-# to start from an empty file instead.
+# ones this script knows nothing about (the screen tab). Use --reset to start
+# from an empty file instead.
 #
-# The keys must match Settings.kt.
+# The keys must match Settings.kt and mqtt/MqttSettings.kt.
 set -euo pipefail
 
 PKG=com.nicobrailo.astrodock
@@ -32,13 +32,21 @@ Usage: tools/push-config.sh [OPTION]...
   --album-to-year YEAR     Only albums with pictures up to YEAR (0: no limit)
   Pass '' to any of the four to drop that part of the filter.
 
+  Where the device reports its state (see mqtt/MqttSettings.kt). The rest of
+  the MQTT settings are only on the device's screen:
+
+  --mqtt-enabled BOOL      Report to the broker at all: true or false
+  --mqtt-host HOST         Broker's address, e.g. 192.168.1.10
+  --mqtt-port PORT         Broker's port (default 1883)
+
   --show                   Print the settings on the device and exit
   --reset                  Replace every setting, instead of editing what's there
 EOF
 }
 
-# The settings to write, as parallel arrays: name, value, and "string" or "int"
-# for how SettingsActivity stores it (a SeekBarPreference stores an int).
+# The settings to write, as parallel arrays: name, value, and "string", "int"
+# or "bool" for how SettingsActivity stores it (a SeekBarPreference stores an
+# int, a SwitchPreferenceCompat a boolean).
 keys=()
 values=()
 types=()
@@ -47,6 +55,13 @@ set_pref() {
   keys+=("$1")
   values+=("$2")
   types+=("${3:-string}")
+}
+
+boolean() {
+  local value=$1 name=$2
+  [[ $value == true || $value == false ]] && return 0
+  echo "$name must be true or false, not \"$value\"" >&2
+  exit 1
 }
 
 number() {
@@ -76,6 +91,9 @@ while [[ $# -gt 0 ]]; do
     --album-exclude) set_pref album_name_exclude "$2"; shift 2 ;;
     --album-from-year) number "$2" "$1" 0 9999; set_pref album_from_year "$2"; shift 2 ;;
     --album-to-year) number "$2" "$1" 0 9999; set_pref album_to_year "$2"; shift 2 ;;
+    --mqtt-enabled) boolean "$2" "$1"; set_pref mqtt_enabled "$2" bool; shift 2 ;;
+    --mqtt-host) set_pref mqtt_host "$2"; shift 2 ;;
+    --mqtt-port) number "$2" "$1" 1 65535; set_pref mqtt_port "$2"; shift 2 ;;
     --show) show=1; shift ;;
     --reset) reset=1; shift ;;
     -h | --help) usage; exit 0 ;;
@@ -133,6 +151,8 @@ prefs() {
   for i in "${!keys[@]}"; do
     if [[ ${types[i]} == int ]]; then
       inserts+="    <int name=\"${keys[i]}\" value=\"${values[i]}\" />"$'\n'
+    elif [[ ${types[i]} == bool ]]; then
+      inserts+="    <boolean name=\"${keys[i]}\" value=\"${values[i]}\" />"$'\n'
     else
       inserts+="    <string name=\"${keys[i]}\">$(xml_escape "${values[i]}")</string>"$'\n'
     fi

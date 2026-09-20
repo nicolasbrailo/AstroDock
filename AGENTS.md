@@ -21,13 +21,14 @@ it up to date when the design changes.
   restarts the app, so they don't have to be typed on the touch screen
   (`--server-url`, `--api-key`, `--max-pictures`, `--percent`,
   `--slide-seconds` and the album filter's `--album-include`,
-  `--album-exclude`, `--album-from-year`, `--album-to-year`; `--show` prints
-  what the device has, `--help` lists them all). It reads the preferences file
-  off the device and only replaces the settings it was given, so the rest are
-  left alone, including the ones it knows nothing about (the screen and MQTT
-  tabs); `--reset` replaces the whole file instead. Android writes one setting
-  per line, which is what makes editing it with `sed` and `awk` sound enough
-  for this. Only works with debug builds, since it uses `run-as`.
+  `--album-exclude`, `--album-from-year`, `--album-to-year`, and the broker's
+  `--mqtt-enabled`, `--mqtt-host` and `--mqtt-port`; `--show` prints what the
+  device has, `--help` lists them all). It reads the preferences file off the
+  device and only replaces the settings it was given, so the rest are left
+  alone, including the ones it knows nothing about (the screen tab and the rest
+  of the MQTT one); `--reset` replaces the whole file instead. Android writes
+  one setting per line, which is what makes editing it with `sed` and `awk`
+  sound enough for this. Only works with debug builds, since it uses `run-as`.
 - `tools/build-apks.sh [OUT_DIR]`: runs the unit tests, builds both APKs and
   leaves them in `~/Downloads` as `AstroDock-debug.apk` and
   `AstroDock-release.apk`, the names the Apps tab looks for in a GitHub
@@ -53,7 +54,11 @@ it up to date when the design changes.
 
 Toolchain: AGP 9 with its built-in Kotlin support (there is no separate
 `kotlin-android` plugin), Gradle version catalog in `gradle/libs.versions.toml`,
-minSdk 29, Java 11. Views and XML layouts, not Compose.
+minSdk 28, Java 11. Views and XML layouts, not Compose. The Portal is
+Android 10 (API 29), but nothing here needs more than API 28, so older
+devices can run it too; the one API 29 call, `RoleManager`, is guarded (see
+`SystemSettingsFragment.kt`). `./gradlew lintDebug` fails the build on a
+`NewApi` error, so it is what says whether that is still true.
 
 ## Code map
 
@@ -180,6 +185,9 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   from the system, with its state and a button that opens the system dialog.
   These intents must be started **for a result** (`systemDialog.launch`): the
   role dialog identifies the caller that way and closes immediately otherwise.
+  That dialog is the only thing in the app that needs API 29 (`RoleManager`),
+  so `homeRoleIntent` returns null below that and the home screen settings,
+  where the user picks the launcher by hand, are opened instead.
 - `ScreenAdminReceiver.kt` + `res/xml/device_admin.xml`: device admin with the
   force-lock policy only, so the app can turn the screen off.
 - `ScreenControl.kt`: the two bits of screen behaviour the app may control. It

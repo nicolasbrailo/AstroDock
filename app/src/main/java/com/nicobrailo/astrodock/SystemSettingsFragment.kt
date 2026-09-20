@@ -2,8 +2,10 @@ package com.nicobrailo.astrodock
 
 import android.app.admin.DevicePolicyManager
 import android.app.role.RoleManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings as AndroidSettings
 import android.view.LayoutInflater
@@ -55,7 +57,6 @@ class SystemSettingsFragment : Fragment() {
     private fun requirements(): List<Item> {
         val context = requireContext()
         val dpm = context.getSystemService(DevicePolicyManager::class.java)
-        val roleManager = context.getSystemService(RoleManager::class.java)
 
         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val isHome = context.packageManager.resolveActivity(home, 0)
@@ -71,8 +72,7 @@ class SystemSettingsFragment : Fragment() {
                 buttonText = getString(R.string.system_home_button),
                 done = isHome,
                 // The role dialog if the device has it, else the home screen settings
-                intent = roleManager?.takeIf { it.isRoleAvailable(RoleManager.ROLE_HOME) }
-                    ?.createRequestRoleIntent(RoleManager.ROLE_HOME)
+                intent = homeRoleIntent(context)
                     ?: Intent(AndroidSettings.ACTION_HOME_SETTINGS),
             ),
             Item(
@@ -146,6 +146,16 @@ class SystemSettingsFragment : Fragment() {
                 intent = null,
             ),
         )
+    }
+
+    // The dialog that asks to become the home screen, which is the shortest
+    // way there. RoleManager is API 29, so on anything older the caller falls
+    // back to the home screen settings, where the user picks it themselves.
+    private fun homeRoleIntent(context: Context): Intent? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return null
+        val roleManager = context.getSystemService(RoleManager::class.java) ?: return null
+        if (!roleManager.isRoleAvailable(RoleManager.ROLE_HOME)) return null
+        return roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME)
     }
 
     private fun show(item: Item) {
