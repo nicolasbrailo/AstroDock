@@ -18,6 +18,8 @@ import androidx.lifecycle.lifecycleScope
 import com.nicobrailo.astrodock.apps.ApkInstaller
 import com.nicobrailo.astrodock.apps.INSTALLABLE_APPS
 import com.nicobrailo.astrodock.apps.Installable
+import com.nicobrailo.astrodock.apps.pickApkAsset
+import com.nicobrailo.astrodock.apps.sameBuild
 import okhttp3.Request
 import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
@@ -25,7 +27,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.content.pm.PackageManager
 import com.nicobrailo.astrodock.BuildConfig
+import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 
 // Apps worth having on a Portal, which has no app store. Each row says whether
 // the app is installed and offers the quickest way to get it: downloading the
@@ -92,33 +96,47 @@ class InstallAppsFragment : Fragment() {
 
         if (installed && app.githubRepo != null) {
             status.text = getString(R.string.install_current_version, BuildConfig.VERSION_NAME)
-            // Add a "Check for update" button action or check automatically / conditionally.
-            // Let's add a sub-action button or check right here if needed, or handle it via button action.
+            // Checked when the user asks, not on every visit to the tab: it's
+            // a request to GitHub and a hash of the whole APK
             button.setText(R.string.install_button_check_update)
             button.setOnClickListener {
                 button.isEnabled = false
                 status.setText(R.string.install_checking_update)
                 viewLifecycleOwner.lifecycleScope.launch {
                     try {
-                        val latestTag = withContext(Dispatchers.IO) {
-                            val url = "https://api.github.com/repos/${app.githubRepo}/releases/latest"
-                            val req = Request.Builder().url(url).header("Accept", "application/json").build()
-                            installer.http.newCall(req).execute().use { resp ->
-                                if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
-                                val obj = JSONObject(resp.body.string())
-                                obj.optString("tag_name", "").trimStart('v')
-                            }
+                        val (release, installedSha256) = withContext(Dispatchers.IO) {
+                            latestRelease(app) to installedApkSha256(app)
                         }
-                        if (latestTag.isNotEmpty() && latestTag != BuildConfig.VERSION_NAME) {
-                            status.text = getString(R.string.install_update_available, latestTag)
-                            button.setText(R.string.install_button_install)
-                            button.isEnabled = true
-                            button.setOnClickListener { download(app, status, button) }
-                        } else {
-                            status.setText(R.string.install_no_update)
-                            button.setText(R.string.install_button_open)
-                            button.isEnabled = true
-                            button.setOnClickListener { open(app) }
+                        // The digest settles it. Only a release published before
+                        // GitHub started giving one falls back to the tag, which
+                        // is right only as far as the tag is written like the
+                        // version name; ignoring case, because a tag is written
+                        // however whoever cut the release felt like writing it.
+                        Log.d(TAG, "${app.name} ${release.tag}: installed is $installedSha256, " +
+                            "the release has ${release.digest}")
+                        val current = sameBuild(release.digest, installedSha256)
+                            ?: release.tag.trimStart('v', 'V')
+                                .equals(BuildConfig.VERSION_NAME, ignoreCase = true)
+                        button.isEnabled = true
+                        when {
+                            current -> {
+                                status.setText(R.string.install_no_update)
+                                button.setText(R.string.install_button_open)
+                                button.setOnClickListener { open(app) }
+                            }
+                            // Another build, but nothing in it we can install
+                            release.apkUrl == null -> {
+                                status.text = getString(R.string.install_update_available, release.tag)
+                                button.setText(R.string.install_button_page)
+                                button.setOnClickListener { openInBrowser(app.pageUrl) }
+                            }
+                            else -> {
+                                status.text = getString(R.string.install_update_available, release.tag)
+                                button.setText(R.string.install_button_install)
+                                button.setOnClickListener {
+                                    download(app.copy(apkUrl = release.apkUrl), status, button)
+                                }
+                            }
                         }
                     } catch (e: Exception) {
                         Log.w(TAG, "Can't check updates for ${app.name}", e)
@@ -147,6 +165,57 @@ class InstallAppsFragment : Fragment() {
             }
         }
         return view
+    }
+
+    // What the latest release offers: its tag, the APK to download from it (null
+    // when it holds none) and the digest GitHub has for that file.
+    private data class Release(val tag: String, val apkUrl: String?, val digest: String?)
+
+    // The installed APK's hash, for the digest of the release's file. The APK
+    // is tens of megabytes, so this is only ever called off the main thread.
+    private fun installedApkSha256(app: Installable): String {
+        val info = requireContext().packageManager.getApplicationInfo(app.packageName, 0)
+        val digest = MessageDigest.getInstance("SHA-256")
+        File(info.sourceDir).inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    // The latest release. Reading the file's name from it is what makes this
+    // reliable:
+    // https://github.com/<repo>/releases/latest/download/<name> is a stable URL,
+    // but it redirects to the newest release whether or not that release has a
+    // file by that name, so a name that's wrong (or that changes between
+    // releases) looks fine until the download 404s.
+    private fun latestRelease(app: Installable): Release {
+        val url = "https://api.github.com/repos/${app.githubRepo}/releases/latest"
+        val req = Request.Builder().url(url).header("Accept", "application/json").build()
+        return installer.http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+            val release = JSONObject(resp.body.string())
+            val assets = release.optJSONArray("assets")
+            // In the order the release lists them, which is what pickApkAsset
+            // falls back to
+            val urls = LinkedHashMap<String, String>()
+            val digests = HashMap<String, String>()
+            for (i in 0 until (assets?.length() ?: 0)) {
+                val asset = assets!!.getJSONObject(i)
+                val name = asset.optString("name")
+                val download = asset.optString("browser_download_url")
+                if (name.isEmpty() || download.isEmpty()) continue
+                urls[name] = download
+                val digest = asset.optString("digest")
+                if (digest.isNotEmpty()) digests[name] = digest
+            }
+            val name = pickApkAsset(urls.keys.toList(), app.githubAssets)
+            Release(release.optString("tag_name", ""), urls[name], digests[name])
+        }
     }
 
     private fun open(app: Installable) {

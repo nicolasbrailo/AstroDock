@@ -75,7 +75,24 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   `apkUrl` (a URL that always serves the current release, as F-Droid publishes)
   is downloaded to the cache and handed to the system installer through a
   FileProvider; one without (most projects number their downloads per release)
-  opens its download page in a browser instead. Installing needs
+  opens its download page in a browser instead. AstroDock itself is an entry
+  too, and updates itself: an entry with a `githubRepo` reads that repository's
+  latest release and offers the APK in it. Whether that APK is the one already
+  running is settled by the sha256 GitHub publishes for it against the hash of
+  the installed APK (`sameBuild`): a version name is inside the APK, where
+  nothing short of downloading it would find it, and a tag only says anything
+  as far as it's written like the version name, so the tag is compared with
+  `BuildConfig.VERSION_NAME` only for a release old enough to have no digest.
+  A locally built APK is never the published one, so on a development device
+  this always offers the update. Which file it takes is decided by
+  `githubAssets`, the names it prefers, read from the release rather than built
+  into `apkUrl`, because `releases/latest/download/<name>` redirects to the
+  newest release whether or not that release holds a file by that name, so a
+  name that's wrong is only found out when the download 404s. `pickApkAsset`
+  and `sameBuild` hold both decisions as pure functions, and are unit tested.
+  Keep a debug build first in the list: `tools/push-config.sh` and
+  `tools/force-uninstall.sh` go through `run-as`, which a release build doesn't
+  allow. Installing needs
   `REQUEST_INSTALL_PACKAGES` plus the user allowing "install unknown apps",
   which is asked for before downloading and is also listed in the System tab.
   A download and the install that follows hold a screen-bright wake lock

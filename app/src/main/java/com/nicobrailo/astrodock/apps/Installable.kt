@@ -15,6 +15,12 @@ data class Installable(
     val apkUrl: String?,
     val pageUrl: String,
     val githubRepo: String? = null,
+    // The release assets to look for, best first, for an app updated from its
+    // own GitHub releases. The name is looked up in the release rather than
+    // put in apkUrl, because GitHub's /releases/latest/download/<name> URL
+    // redirects to the release whether or not it holds a file by that name, so
+    // a wrong name isn't found out until the download has already failed.
+    val githubAssets: List<String> = emptyList(),
 ) {
     fun isInstalled(context: Context): Boolean = try {
         context.packageManager.getPackageInfo(packageName, 0)
@@ -24,15 +30,45 @@ data class Installable(
     }
 }
 
+// Picks which of a release's files to download: the first name the app asked
+// for that the release actually has, or else any APK in it, so that a release
+// whose files were renamed still updates the app instead of failing.
+fun pickApkAsset(available: List<String>, preferred: List<String>): String? =
+    preferred.firstOrNull { it in available }
+        ?: available.firstOrNull { it.endsWith(".apk", ignoreCase = true) }
+
+// Whether a release's file is the one already installed, from the digest
+// GitHub publishes for it ("sha256:<hex>") and the installed APK's own hash.
+// This is what decides whether there's an update: the APK's version name is
+// inside the APK, so nothing short of downloading it would reveal that, and a
+// release's tag only says anything if it's written like the version name.
+// Releases from before GitHub published digests have none, and then there is
+// nothing to compare, so this says so instead of guessing.
+fun sameBuild(assetDigest: String?, installedSha256: String): Boolean? {
+    val prefix = "sha256:"
+    if (assetDigest == null || !assetDigest.startsWith(prefix, ignoreCase = true)) return null
+    val hex = assetDigest.substring(prefix.length)
+    if (hex.isEmpty()) return null
+    return hex.equals(installedSha256, ignoreCase = true)
+}
+
 // The apps offered in the Apps tab of the settings
 val INSTALLABLE_APPS = listOf(
     Installable(
         name = "AstroDock",
         packageName = "com.nicobrailo.astrodock",
         description = "This home screen replacement app. Check for updates and install them directly from GitHub releases.",
-        apkUrl = "https://github.com/nicolasbrailo/AstroDock/releases/latest/download/app-release.apk",
+        // Resolved from the latest release, see githubAssets
+        apkUrl = null,
         pageUrl = "https://github.com/nicolasbrailo/AstroDock",
         githubRepo = "nicolasbrailo/AstroDock",
+        // A debug build first: tools/push-config.sh and tools/force-uninstall.sh
+        // both go through run-as, which only works on a debuggable app. The
+        // release so far is named AstroDock.apk, and app-debug/app-release are
+        // what Gradle calls its output.
+        githubAssets = listOf(
+            "AstroDock-debug.apk", "app-debug.apk", "AstroDock.apk", "app-release.apk",
+        ),
     ),
     Installable(
         name = "F-Droid",
