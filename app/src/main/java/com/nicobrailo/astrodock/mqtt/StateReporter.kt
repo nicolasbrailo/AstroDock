@@ -12,6 +12,7 @@ import android.os.SystemClock
 import android.provider.Settings as AndroidSettings
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.nicobrailo.astrodock.R
 import com.nicobrailo.astrodock.ScreenControl
 import com.nicobrailo.astrodock.Settings
 import com.nicobrailo.astrodock.immich.AlbumFilter
@@ -22,7 +23,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.eclipse.paho.client.mqttv3.IMqttActionListener
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
+import org.eclipse.paho.client.mqttv3.IMqttToken
 import org.eclipse.paho.client.mqttv3.MqttAsyncClient
 import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions
@@ -68,8 +71,17 @@ class StateReporter private constructor(private val context: Context) {
     private val mainThread = Handler(Looper.getMainLooper())
     // The slideshow currently on screen, which carries out its commands
     private var commandListener: ((Command) -> Unit)? = null
+    // What is wrong with the broker, null while it is fine. Nothing on screen
+    // depends on MQTT, so a broker that can't be reached would otherwise only
+    // show up in the log; the slideshow puts this in a corner instead.
+    @Volatile
+    var alert: String? = null
+        private set
+    @Volatile
+    private var alertListener: ((String?) -> Unit)? = null
     private var settings: MqttSettings? = null
     private var occupancyJob: Job? = null
+    private var connectWatchdog: Job? = null
     private var watchingScreen = false
 
     // The state we publish, kept so a reconnect can republish all of it.
@@ -102,7 +114,10 @@ class StateReporter private constructor(private val context: Context) {
         if (newSettings == settings && client?.isConnected == true) return
         settings = newSettings
         disconnect()
-        if (!newSettings.isConfigured) return
+        if (!newSettings.isConfigured) {
+            setAlert(null)
+            return
+        }
 
         watchScreen()
         scope.launch { connect(newSettings) }
@@ -117,6 +132,24 @@ class StateReporter private constructor(private val context: Context) {
 
     fun clearCommandListener(listener: (Command) -> Unit) {
         if (commandListener === listener) commandListener = null
+    }
+
+    // Called on the main thread, at once with whatever is wrong now and again
+    // whenever that changes
+    fun setAlertListener(listener: (String?) -> Unit) {
+        alertListener = listener
+        listener(alert)
+    }
+
+    fun clearAlertListener(listener: (String?) -> Unit) {
+        if (alertListener === listener) alertListener = null
+    }
+
+    private fun setAlert(message: String?) {
+        if (message == alert) return
+        alert = message
+        val listener = alertListener ?: return
+        mainThread.post { if (alertListener === listener) listener(message) }
     }
 
     fun onSlideshowVisible(source: String, visible: Boolean) {
@@ -206,12 +239,19 @@ class StateReporter private constructor(private val context: Context) {
             newClient.setCallback(object : MqttCallbackExtended {
                 override fun connectComplete(reconnect: Boolean, serverUri: String?) {
                     Log.i(TAG, "Connected to $serverUri")
+                    connectWatchdog?.cancel()
+                    setAlert(null)
                     subscribeToCommands()
                     publishEverything()
                 }
 
                 override fun connectionLost(cause: Throwable?) {
                     Log.w(TAG, "Connection lost, reconnecting", cause)
+                    setAlert(
+                        context.getString(
+                            R.string.mqtt_alert_lost, settings.host, settings.port, reason(cause)
+                        )
+                    )
                 }
 
                 override fun messageArrived(topic: String?, message: MqttMessage?) {
@@ -221,11 +261,65 @@ class StateReporter private constructor(private val context: Context) {
                 override fun deliveryComplete(token: IMqttDeliveryToken?) = Unit
             })
             client = newClient
-            newClient.connect(options)
+            // Paho only reconnects by itself once it has been connected, so a
+            // first connect that fails is the end of it until applySettings()
+            // comes round again, which the slideshow does every time it appears.
+            // Either way the failure is only reported here, asynchronously.
+            newClient.connect(options, null, object : IMqttActionListener {
+                override fun onSuccess(asyncActionToken: IMqttToken?) = Unit
+
+                override fun onFailure(asyncActionToken: IMqttToken?, e: Throwable?) {
+                    Log.w(TAG, "Can't connect to ${settings.host}:${settings.port}", e)
+                    cantConnect(settings, e)
+                }
+            })
+            watchConnect(newClient, settings)
         } catch (e: MqttException) {
-            // Paho retries by itself once connected, but a failure here (bad
-            // host, no network) means there's nothing to retry with
+            // A bad host or a broken client: nothing was even attempted
             Log.w(TAG, "Can't connect to ${settings.host}:${settings.port}", e)
+            cantConnect(settings, e)
+        }
+    }
+
+    // Paho's connectionTimeout only covers opening the socket. Once that is
+    // open it waits for the broker's CONNACK with no deadline of its own, so a
+    // port that accepts the connection and then says nothing — an HTTP server
+    // behind the wrong port number, a firewall that swallows the reply — leaves
+    // the connect hanging for ever, with neither connectComplete nor onFailure.
+    // Nothing would ever say so, so we give it a deadline and drop the stuck
+    // client, which lets the next applySettings() start a fresh one.
+    private fun watchConnect(newClient: MqttAsyncClient, settings: MqttSettings) {
+        connectWatchdog?.cancel()
+        connectWatchdog = scope.launch {
+            delay(CONNECT_GIVE_UP_MILLIS)
+            if (client !== newClient || newClient.isConnected) return@launch
+            Log.w(TAG, "No answer from ${settings.host}:${settings.port}")
+            setAlert(
+                context.getString(R.string.mqtt_alert_no_answer, settings.host, settings.port)
+            )
+            try {
+                newClient.disconnectForcibly(0, 0)
+            } catch (e: MqttException) {
+                Log.w(TAG, "Can't drop the stuck connection", e)
+            }
+        }
+    }
+
+    private fun cantConnect(settings: MqttSettings, cause: Throwable?) {
+        setAlert(
+            context.getString(
+                R.string.mqtt_alert_connect, settings.host, settings.port, reason(cause)
+            )
+        )
+    }
+
+    // Paho's messages are short ("Unable to connect to server"); its cause says
+    // what actually happened ("failed to connect to /10.0.0.10 (port 5000)")
+    private fun reason(cause: Throwable?): String {
+        val message = cause?.message?.takeIf { it.isNotBlank() }
+        val inner = cause?.cause?.message?.takeIf { it.isNotBlank() && it != message }
+        return listOfNotNull(message, inner).joinToString(": ").ifEmpty {
+            cause?.javaClass?.simpleName.orEmpty()
         }
     }
 
@@ -235,11 +329,13 @@ class StateReporter private constructor(private val context: Context) {
             client?.subscribe(settings.topicPrefix + Commands.TOPIC_FILTER, QOS)
         } catch (e: MqttException) {
             Log.w(TAG, "Can't subscribe to commands", e)
+            setAlert(context.getString(R.string.mqtt_alert_subscribe, reason(e)))
         }
     }
 
     private fun disconnect() {
         occupancyJob?.cancel()
+        connectWatchdog?.cancel()
         val old = client ?: return
         client = null
         scope.launch {
@@ -451,6 +547,8 @@ class StateReporter private constructor(private val context: Context) {
         private const val QOS = 0
         private const val KEEPALIVE_SECONDS = 30
         private const val CONNECT_TIMEOUT_SECONDS = 10
+        // Twice the above, since that only covers opening the socket
+        private const val CONNECT_GIVE_UP_MILLIS = 20_000L
         private const val OCCUPANCY_REFRESH_MILLIS = 60_000L
         // How long force_on holds the screen before the usual timeouts resume
         private const val FORCE_ON_MILLIS = 30 * 60 * 1000L

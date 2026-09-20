@@ -174,6 +174,22 @@
         android:textSize="34sp"
         android:visibility="gone" />
 
+    <!-- Something is wrong that the pictures don't show by themselves: the MQTT
+         broker can't be reached. Only the home screen puts it up; the
+         screensaver runs all night and shouldn't nag. -->
+    <TextView
+        android:id="@+id/alert"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="24dp"
+        android:background="@drawable/status_background"
+        android:maxWidth="560dp"
+        android:padding="12dp"
+        android:textColor="#FFFFC107"
+        android:textSize="16sp"
+        android:visibility="gone" />
+
     <!-- Shown while loading or when something failed -->
     <TextView
         android:id="@+id/status"

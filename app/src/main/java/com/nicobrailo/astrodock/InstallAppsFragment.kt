@@ -91,8 +91,12 @@ class InstallAppsFragment : Fragment() {
         view.findViewById<TextView>(R.id.description).text = app.description
 
         val installed = app.isInstalled(requireContext())
-        // The download is no use once the app is there
-        if (installed) installer.forget(app)
+        // The download is no use once the app is there, unless the installer is
+        // reading it at this very moment: AstroDock updating itself counts as
+        // installed the whole way through, and deleting the file from under the
+        // installer fails the install with "There was a problem while parsing
+        // the package". It's deleted when the user comes back instead.
+        if (installed && !waitingForInstaller) installer.forget(app)
 
         if (installed && app.githubRepo != null) {
             status.text = getString(R.string.install_current_version, BuildConfig.VERSION_NAME)
@@ -251,10 +255,15 @@ class InstallAppsFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
                 val file = installer.download(app) { percent ->
-                    status.text = if (percent < 0) {
-                        getString(R.string.install_downloading_unknown)
-                    } else {
-                        getString(R.string.install_downloading, percent)
+                    // The download runs on an IO thread, and only the main one
+                    // may touch a view. Android 10 logs this and carries on,
+                    // but says it will throw in a later version.
+                    withContext(Dispatchers.Main) {
+                        status.text = if (percent < 0) {
+                            getString(R.string.install_downloading_unknown)
+                        } else {
+                            getString(R.string.install_downloading, percent)
+                        }
                     }
                 }
                 // The system takes over from here and asks the user to confirm.

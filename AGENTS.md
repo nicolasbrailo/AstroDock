@@ -17,10 +17,17 @@ it up to date when the design changes.
   (JVM, no device needed).
 - `adb install -r app/build/outputs/apk/debug/app-debug.apk` then
   `adb shell am start -n com.nicobrailo.astrodock/.SlideshowActivity`.
-- `tools/push-config.sh SERVER_URL API_KEY [MAX_PICTURES [PERCENT [SLIDE_SECONDS]]]`:
-  pushes the settings to the device and restarts the app, so they don't have
-  to be typed on the touch screen. Only works with debug builds, since it uses
-  `run-as`.
+- `tools/push-config.sh [OPTION]...`: pushes the settings to the device and
+  restarts the app, so they don't have to be typed on the touch screen
+  (`--server-url`, `--api-key`, `--max-pictures`, `--percent`,
+  `--slide-seconds` and the album filter's `--album-include`,
+  `--album-exclude`, `--album-from-year`, `--album-to-year`; `--show` prints
+  what the device has, `--help` lists them all). It reads the preferences file
+  off the device and only replaces the settings it was given, so the rest are
+  left alone, including the ones it knows nothing about (the screen and MQTT
+  tabs); `--reset` replaces the whole file instead. Android writes one setting
+  per line, which is what makes editing it with `sed` and `awk` sound enough
+  for this. Only works with debug builds, since it uses `run-as`.
 - `tools/build-apks.sh [OUT_DIR]`: runs the unit tests, builds both APKs and
   leaves them in `~/Downloads` as `AstroDock-debug.apk` and
   `AstroDock-release.apk`, the names the Apps tab looks for in a GitHub
@@ -115,7 +122,13 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   (`ScreenControl.keepScreenOn`), because the screensaver would otherwise cover
   the installer's confirmation: a keep-screen-on window flag is no use once
   another app is in front. It is released when the fragment is resumed again
-  (installed or cancelled), and has a 10 minute timeout as a backstop.
+  (installed or cancelled), and has a 10 minute timeout as a backstop. The
+  downloaded file is thrown away once its app is on the device, but not while
+  the installer still has it: AstroDock counts as installed the whole way
+  through updating itself, and deleting the file under the installer fails it
+  with "There was a problem while parsing the package". Progress is reported
+  from the download's own thread, so the fragment hops to the main thread
+  before it touches the view.
 - `mqtt/StateReporter.kt`, `mqtt/MqttSettings.kt`, `mqtt/Occupancy.kt` +
   `MqttSettingsFragment.kt`, `res/xml/mqtt_preferences.xml`: publishes what the
   device is doing to an MQTT broker, on the topics of the homeboard bridge
@@ -137,13 +150,24 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   must work with nothing on screen. The homeboard's renderer commands
   (`set_svg_overlay`, `set_render_config`, `set_embed_qr`, `set_target_size`)
   are logged and dropped. Retained commands are ignored: they arrive again on
-  every reconnect, and acting on them would replay an old command. The photo payload follows the field names the homeboard's photo
+  every reconnect, and acting on them would replay an old command.
+  Nothing on screen depends on MQTT, so a broker that can't be reached would
+  only show up in the log: the reporter therefore keeps an `alert` (the last
+  thing that went wrong, null while it's fine) and the home screen shows it in
+  a corner. Paho reports a connect that fails, but not one that never finishes:
+  its `connectionTimeout` only covers opening the socket, so a port that
+  accepts the connection and then says nothing (an HTTP server behind the wrong
+  port number) hangs for ever with neither `connectComplete` nor `onFailure`.
+  `watchConnect` gives it 20s and then drops the stuck client, which is also
+  what lets the next `applySettings()` start a fresh one. Paho only reconnects
+  by itself once it has connected at least once, so a first connect that fails
+  waits for that call, which every `SlideshowController.start()` makes. The photo payload follows the field names the homeboard's photo
   provider publishes (`albumname`, `albumpath`, `filename`, `local_path`,
   `src_url`, `gps`, `reverse_geo`, `EXIF DateTimeOriginal`), so one renderer
   reads either device. Immich has no albums on disk, so `albumname` is the
   Immich album and the paths are the server's copy of the original;
   `reverse_geo` holds the place names already in the picture's EXIF, and
-  nothing is looked up. `src_url` needs the API key to fetch. Nothing is subscribed yet; `cmd/...` is a later job.
+  nothing is looked up. `src_url` needs the API key to fetch.
   Departures from the spec, both because this is a Portal: `distance_cm` is
   never published (no mmWave sensor), and occupancy is a guess from the screen
   (`Occupancy`), with a `source` field saying which. The slideshow runs in two
@@ -298,6 +322,9 @@ documents the API). Keep the two behaving the same.
   `adb shell cmd notification allow_listener com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService`
   (`disallow_listener` to revoke).
 - Errors are shown in a text overlay over the picture.
+- Whatever is wrong with the MQTT broker is shown in the top right corner (see
+  `StateReporter`). Only the home screen shows it: the screensaver is what runs
+  all night, with nobody looking, so it isn't the place to complain.
 - When the activity starts again, it reloads the settings. If they changed, it
   rebuilds the client and picker and clears the history. If not, it calls
   `picker.refresh()`.
@@ -323,7 +350,7 @@ documents the API). Keep the two behaving the same.
 
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album
-(default 0 = all) and seconds per picture (default 30). Under "Albums", the
+(default 0 = all) and seconds per picture (default 30). Under "Album filter", the
 `AlbumFilter`: the album names to show and the ones to leave out (comma
 separated, `*` and `?` are wildcards, matching the whole name, case
 insensitive), and a year range (0 at either end means no limit; an album the

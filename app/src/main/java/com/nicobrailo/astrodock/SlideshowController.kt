@@ -120,6 +120,9 @@ class SlideshowController(
     private val announcement: TextView = root.findViewById(R.id.announcement)
     private var announcementJob: Job? = null
     private val onCommand: (Command) -> Unit = { carryOut(it) }
+    // Whatever is wrong with the broker, in a corner of the home screen
+    private val alert: TextView = root.findViewById(R.id.alert)
+    private val onAlert: (String?) -> Unit = { showAlert(it) }
     // What was last reported, so the same picture isn't republished every time
     // the overlay is redrawn
     private var reportedPhoto: String? = null
@@ -168,6 +171,9 @@ class SlideshowController(
         reporter.onSlideshowVisible(reporterSource, true)
         // Commands go to whichever slideshow is on screen
         reporter.setCommandListener(onCommand)
+        // The screensaver is what runs all night, with nobody looking, so it
+        // isn't the place to complain about the broker
+        if (interactive) reporter.setAlertListener(onAlert)
 
         nowPlaying.start()
         // Sound stopping isn't reported, so the panel is re-checked now and then
@@ -197,6 +203,7 @@ class SlideshowController(
     fun stop() {
         reporter.onSlideshowVisible(reporterSource, false)
         reporter.clearCommandListener(onCommand)
+        reporter.clearAlertListener(onAlert)
         nightJob?.cancel()
         nowPlayingJob?.cancel()
         nowPlaying.stop()
@@ -434,6 +441,17 @@ class SlideshowController(
         // Needs the API key to fetch, but it says which picture this is
         val url = runCatching { state.client?.pictureUrl(picture.id, ImmichPictureSize.PREVIEW) }.getOrNull()
         reporter.onPhotoShown(picture.id, picture.album.name, url, info)
+    }
+
+    // Nothing on screen depends on MQTT, so a broker that can't be reached would
+    // otherwise be invisible until someone read the log
+    private fun showAlert(message: String?) {
+        if (message.isNullOrBlank()) {
+            alert.visibility = View.GONE
+            return
+        }
+        alert.text = message
+        alert.visibility = View.VISIBLE
     }
 
     private fun showStatus(message: String) {
