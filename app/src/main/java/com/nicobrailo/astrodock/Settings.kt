@@ -23,7 +23,19 @@ data class Settings(
     val nightScreenOff: Boolean,
     val nightStartHour: Int,
     val nightEndHour: Int,
+    // Current temperature and sky over the clock, from Open-Meteo. It needs no
+    // account, only somewhere to report on, so there is no key to store.
+    val weatherEnabled: Boolean,
+    val weatherLatitude: Double,
+    val weatherLongitude: Double,
 ) {
+    // Somewhere on Earth, and not the Gulf of Guinea, which is where an
+    // unfilled pair of coordinates points
+    val hasWeatherLocation: Boolean
+        get() = weatherLatitude in LATITUDE_RANGE && weatherLongitude in LONGITUDE_RANGE &&
+            !(weatherLatitude == 0.0 && weatherLongitude == 0.0)
+    val showWeather: Boolean get() = weatherEnabled && hasWeatherLocation
+
     val isConfigured: Boolean get() = serverUrl.isNotBlank() && apiKey.isNotBlank()
 
     companion object {
@@ -40,6 +52,9 @@ data class Settings(
         const val KEY_NIGHT_SCREEN_OFF = "night_screen_off"
         const val KEY_NIGHT_START_HOUR = "night_start_hour"
         const val KEY_NIGHT_END_HOUR = "night_end_hour"
+        const val KEY_WEATHER_ENABLED = "weather_enabled"
+        const val KEY_WEATHER_LATITUDE = "weather_latitude"
+        const val KEY_WEATHER_LONGITUDE = "weather_longitude"
 
         const val DEFAULT_MAX_PICTURES = 20
         const val DEFAULT_PERCENT = 0
@@ -57,6 +72,8 @@ data class Settings(
         val SLIDE_SECONDS_RANGE = 5..300
         val SCREEN_OFF_MINUTES_RANGE = 0..30
         val HOUR_RANGE = 0..23
+        val LATITUDE_RANGE = -90.0..90.0
+        val LONGITUDE_RANGE = -180.0..180.0
 
         fun load(context: Context): Settings {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
@@ -64,6 +81,12 @@ data class Settings(
             // Text inputs store their number as a string
             fun int(key: String, default: Int, range: IntRange): Int =
                 prefs.getString(key, null)?.trim()?.toIntOrNull()?.takeIf { it in range } ?: default
+
+            // Coordinates are typed, so they are stored as strings too. Out
+            // of range or unparseable reads as "not set", which hides the panel
+            // rather than asking Open-Meteo about a place that can't exist.
+            fun degrees(key: String, range: ClosedFloatingPointRange<Double>): Double =
+                prefs.getString(key, null)?.trim()?.toDoubleOrNull()?.takeIf { it in range } ?: 0.0
 
             // Sliders store it as an int. Values written by the text inputs
             // these replaced are converted the first time they're read.
@@ -95,6 +118,9 @@ data class Settings(
                 nightScreenOff = prefs.getBoolean(KEY_NIGHT_SCREEN_OFF, false),
                 nightStartHour = int(KEY_NIGHT_START_HOUR, DEFAULT_NIGHT_START_HOUR, HOUR_RANGE),
                 nightEndHour = int(KEY_NIGHT_END_HOUR, DEFAULT_NIGHT_END_HOUR, HOUR_RANGE),
+                weatherEnabled = prefs.getBoolean(KEY_WEATHER_ENABLED, false),
+                weatherLatitude = degrees(KEY_WEATHER_LATITUDE, LATITUDE_RANGE),
+                weatherLongitude = degrees(KEY_WEATHER_LONGITUDE, LONGITUDE_RANGE),
             )
         }
     }

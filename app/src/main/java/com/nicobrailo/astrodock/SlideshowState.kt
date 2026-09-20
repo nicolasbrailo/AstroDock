@@ -25,7 +25,10 @@ import kotlinx.coroutines.sync.Mutex
 //
 // Used from the main thread, except that picking waits on the network.
 class SlideshowState private constructor() {
-    private var settings: Settings? = null
+    // Read by the views for the settings that don't decide which picture is
+    // next, such as the weather panel's
+    var settings: Settings? = null
+        private set
     private var picker: RandomAlbumPicker? = null
     private val history = PictureHistory<AlbumPicture>(HISTORY_SIZE)
     // Picked to follow the newest picture in history, but not shown yet

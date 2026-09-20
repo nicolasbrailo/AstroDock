@@ -20,8 +20,9 @@ it up to date when the design changes.
 - `tools/push-config.sh [OPTION]...`: pushes the settings to the device and
   restarts the app, so they don't have to be typed on the touch screen
   (`--server-url`, `--api-key`, `--max-pictures`, `--percent`,
-  `--slide-seconds` and the album filter's `--album-include`,
-  `--album-exclude`, `--album-from-year`, `--album-to-year`, and the broker's
+  `--slide-seconds`, the album filter's `--album-include`,
+  `--album-exclude`, `--album-from-year`, `--album-to-year`, the weather's
+  `--weather`, `--weather-lat` and `--weather-lon`, and the broker's
   `--mqtt-enabled`, `--mqtt-host` and `--mqtt-port`; `--show` prints what the
   device has, `--help` lists them all). It reads the preferences file off the
   device and only replaces the settings it was given, so the rest are left
@@ -138,6 +139,16 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   with "There was a problem while parsing the package". Progress is reported
   from the download's own thread, so the fragment hops to the main thread
   before it touches the view.
+- `weather/Weather.kt` + `weather/WeatherClient.kt`: the current temperature
+  and sky, over the clock. Open-Meteo (https://open-meteo.com) needs no account
+  and no API key, so the only settings are the toggle and where the device is.
+  `conditionOf` folds the WMO 4677 code the server reports onto the seven
+  `res/drawable/ic_weather_*.xml` icons, since hail, freezing drizzle and the
+  rest of that vocabulary don't survive being drawn at 34dp; an unknown code is
+  a cloud. `millisToNextHour` is what makes it refresh on the hour rather than
+  an hour after the slideshow started, and works in the local zone because a
+  few zones are offset by half an hour or three quarters of one. Both are pure
+  and unit tested; only the fetch and the JSON are not.
 - `mqtt/StateReporter.kt`, `mqtt/MqttSettings.kt`, `mqtt/Occupancy.kt` +
   `MqttSettingsFragment.kt`, `res/xml/mqtt_preferences.xml`: publishes what the
   device is doing to an MQTT broker, on the topics of the homeboard bridge
@@ -337,6 +348,12 @@ documents the API). Keep the two behaving the same.
   slot fetches its picture's metadata alongside the image, so the text is ready
   when the picture slides in; if the metadata can't be fetched, the line is
   hidden.
+- Above the clock, when the Slideshow tab turns it on and a latitude and
+  longitude are set, is the current temperature and an icon for the sky. It is
+  fetched when the slideshow appears and then on every hour. Nothing on screen
+  depends on it, so a fetch that fails only goes to the log and leaves the panel
+  as it was, or hidden: the pictures are the point. The screensaver shows it
+  too.
 - The bottom right corner shows what another app is playing (title, artist and
   album, artwork when the app provides one) with previous, play/pause and next.
   The screensaver shows the text but no buttons, since a touch ends it.
@@ -385,7 +402,10 @@ insensitive), and a year range (0 at either end means no limit; an album the
 server gives no dates for is left out as soon as a year is set). All four are
 empty by default, which shows every album. Changing any of them restarts the
 slideshow, since whatever is on screen may come from an album that is now
-filtered out. Under "Screen": how long
+filtered out. Under "Weather": whether to show it at all and the
+latitude and longitude to show it for (decimal degrees, negative for south and
+west; empty or 0,0 hides the panel, so there is no number meaning "nowhere").
+Changing any of it leaves the pictures alone. Under "Screen": how long
 after the Portal last saw someone the screen switches off (a slider, 0 leaves
 the system's value alone) and an opt-in "turn the screen off at night" with its hours
 (default 00:00 to 06:00, off).

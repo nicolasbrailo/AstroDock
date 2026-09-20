@@ -33,11 +33,17 @@ import com.nicobrailo.astrodock.media.NowPlaying
 import androidx.preference.PreferenceManager
 import com.nicobrailo.astrodock.mqtt.Command
 import com.nicobrailo.astrodock.mqtt.StateReporter
+import com.nicobrailo.astrodock.weather.WeatherClient
+import com.nicobrailo.astrodock.weather.WeatherCondition
+import com.nicobrailo.astrodock.weather.WeatherException
+import com.nicobrailo.astrodock.weather.millisToNextHour
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.time.Instant
 import java.time.LocalTime
+import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.math.sign
 
@@ -114,6 +120,13 @@ class SlideshowController(
     private val nowPlaying = NowPlaying(context) { updateNowPlaying() }
     private var nowPlayingJob: Job? = null
 
+    // Current temperature and sky, over the clock. Refreshed on the hour.
+    private val weatherPanel: View = root.findViewById(R.id.weather)
+    private val weatherIcon: ImageView = root.findViewById(R.id.weather_icon)
+    private val weatherTemperature: TextView = root.findViewById(R.id.weather_temperature)
+    private val weatherClient = WeatherClient()
+    private var weatherJob: Job? = null
+
     // Publishes what this device is doing to an MQTT broker, when that's set up
     private val reporter = StateReporter.get(context)
     private val reporterSource = if (interactive) "home" else "screensaver"
@@ -186,6 +199,7 @@ class SlideshowController(
         }
 
         startNightWatch()
+        startWeather()
 
         if (!state.isConfigured) {
             showStatus(context.getString(R.string.slideshow_not_configured))
@@ -207,9 +221,55 @@ class SlideshowController(
         nightJob?.cancel()
         nowPlayingJob?.cancel()
         nowPlaying.stop()
+        weatherJob?.cancel()
         timerJob?.cancel()
         portalStateJob?.cancel()
         portalState.stop()
+    }
+
+    // ---- Weather -----------------------------------------------------------
+
+    // Fetches the weather now and then again on every hour, for as long as the
+    // slideshow is on screen. Open-Meteo asks for no key, so the only reason to
+    // skip it is the user turning it off or not having said where the device is.
+    private fun startWeather() {
+        weatherJob?.cancel()
+        val settings = state.settings
+        if (settings == null || !settings.showWeather) {
+            weatherPanel.visibility = View.GONE
+            return
+        }
+        weatherJob = scope.launch {
+            while (true) {
+                updateWeather(settings.weatherLatitude, settings.weatherLongitude)
+                delay(millisToNextHour(Instant.now(), ZoneId.systemDefault()))
+            }
+        }
+    }
+
+    private suspend fun updateWeather(latitude: Double, longitude: Double) {
+        val weather = try {
+            weatherClient.current(latitude, longitude)
+        } catch (e: WeatherException) {
+            // Nothing on screen depends on this, and the pictures are the
+            // point, so a broker-style alert would be more noise than it is
+            // worth: the panel just stays as it was, or stays hidden.
+            Log.w(TAG, "Weather: ${e.message}")
+            return
+        }
+        weatherTemperature.text = weather.temperatureText
+        weatherIcon.setImageResource(iconOf(weather.condition))
+        weatherPanel.visibility = View.VISIBLE
+    }
+
+    private fun iconOf(condition: WeatherCondition): Int = when (condition) {
+        WeatherCondition.CLEAR -> R.drawable.ic_weather_clear
+        WeatherCondition.PARTLY_CLOUDY -> R.drawable.ic_weather_partly_cloudy
+        WeatherCondition.CLOUDY -> R.drawable.ic_weather_cloudy
+        WeatherCondition.FOG -> R.drawable.ic_weather_fog
+        WeatherCondition.RAIN -> R.drawable.ic_weather_rain
+        WeatherCondition.SNOW -> R.drawable.ic_weather_snow
+        WeatherCondition.THUNDERSTORM -> R.drawable.ic_weather_thunder
     }
 
     // ---- Pictures ----------------------------------------------------------

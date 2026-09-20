@@ -71,6 +71,8 @@ class SettingsActivity : AppCompatActivity() {
             numberPreference(Settings.KEY_ALBUM_TO_YEAR, Settings.YEAR_RANGE)
             numberPreference(Settings.KEY_NIGHT_START_HOUR, Settings.HOUR_RANGE)
             numberPreference(Settings.KEY_NIGHT_END_HOUR, Settings.HOUR_RANGE)
+            degreesPreference(Settings.KEY_WEATHER_LATITUDE, Settings.LATITUDE_RANGE)
+            degreesPreference(Settings.KEY_WEATHER_LONGITUDE, Settings.LONGITUDE_RANGE)
         }
 
         // Shows a numeric keyboard and rejects values outside range. The
@@ -83,6 +85,31 @@ class SettingsActivity : AppCompatActivity() {
                 val ok = (value as String).trim().toIntOrNull()?.let { it in range } == true
                 if (!ok) {
                     val msg = getString(R.string.settings_invalid_number, range.first, range.last)
+                    Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+                }
+                ok
+            }
+        }
+
+        // The same for a coordinate, which unlike every other number here is
+        // fractional and may be negative, so it needs the signed and decimal
+        // keyboard flags and its own check.
+        private fun degreesPreference(key: String, range: ClosedFloatingPointRange<Double>) {
+            val pref = findPreference<EditTextPreference>(key) ?: return
+            pref.setOnBindEditTextListener {
+                it.inputType = InputType.TYPE_CLASS_NUMBER or
+                    InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
+            }
+            pref.setOnPreferenceChangeListener { _, value ->
+                val text = (value as String).trim()
+                // Empty clears it, which turns the panel off without having to
+                // find a number that means "nowhere"
+                val ok = text.isEmpty() ||
+                    text.toDoubleOrNull()?.let { it in range } == true
+                if (!ok) {
+                    val msg = getString(
+                        R.string.settings_invalid_degrees, range.start, range.endInclusive
+                    )
                     Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
                 }
                 ok

@@ -65,6 +65,26 @@
             app:useSimpleSummaryProvider="true" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="@string/settings_category_weather">
+        <SwitchPreferenceCompat
+            app:key="weather_enabled"
+            app:title="@string/settings_weather_enabled"
+            app:summary="@string/settings_weather_enabled_hint"
+            app:defaultValue="false" />
+        <EditTextPreference
+            app:key="weather_latitude"
+            app:title="@string/settings_weather_latitude"
+            app:dialogMessage="@string/settings_weather_latitude_hint"
+            app:dependency="weather_enabled"
+            app:useSimpleSummaryProvider="true" />
+        <EditTextPreference
+            app:key="weather_longitude"
+            app:title="@string/settings_weather_longitude"
+            app:dialogMessage="@string/settings_weather_longitude_hint"
+            app:dependency="weather_enabled"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="@string/settings_category_screen">
         <SeekBarPreference
             android:max="30"
