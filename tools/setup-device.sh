@@ -9,8 +9,10 @@
 # secure setting that decides when the screen switches off, hides the Portal's
 # floating bug-report pill, turns off the Portal's app verifier, which only
 # accepts apps signed by Facebook and fails every other install with "App
-# certificate rejected" (adb installs are never verified), and makes the
-# system's install dialog readable again (see below). To undo any of it:
+# certificate rejected" (adb installs are never verified), makes the system's
+# install dialog readable again (see below), and grants the notification access
+# the media controls need, which on the Portal only adb can do (see below).
+# To undo any of it:
 #
 #   adb shell cmd package set-home-activity com.facebook.alohaapps.launcher
 #   adb shell pm revoke com.nicobrailo.astrodock android.permission.WRITE_SECURE_SETTINGS
@@ -20,9 +22,11 @@
 #   adb shell settings put global package_verifier_enable 1
 #   adb shell cmd overlay enable com.facebook.aloha.rro.niu.android
 #   adb shell settings put secure high_text_contrast_enabled 0
+#   adb shell cmd notification disallow_listener \
+#     com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService
 #
-# The rest of what the app needs (device admin, system settings, notification
-# access, installing apps) is granted from the System tab of its settings.
+# The rest of what the app needs (device admin, system settings, installing
+# apps) is granted from the System tab of its settings.
 set -euo pipefail
 
 if [[ $# -ne 0 ]]; then
@@ -60,6 +64,16 @@ adb shell settings put secure screensaver_enabled 1
 # off) is a secure setting. This grant lets the app keep it at whatever the
 # Slideshow tab says, which matters because the Portal resets it on its own.
 adb shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS
+# Notification access, which is what lets the slideshow read and control what
+# another app is playing. The System tab has a button for it, but the screen it
+# opens (com.android.settings/.Settings$NotificationAccessSettingsActivity)
+# closes itself the instant it appears on the Portal, so nothing on the device
+# can grant this. Measured: it starts, resumes, and is gone ~40ms later, with
+# no exception and no permission denial, whether or not astrodock is running;
+# the screensaver and overlay screens in the same app stay up fine.
+adb shell cmd notification allow_listener \
+  "$PKG/com.nicobrailo.astrodock.media.MediaListenerService"
+
 adb shell appops set "$OVERLAY_PKG" SYSTEM_ALERT_WINDOW deny
 adb shell am force-stop "$OVERLAY_PKG"
 adb shell settings put global package_verifier_enable 0
@@ -82,3 +96,5 @@ echo "bug pill overlay: $(adb shell appops get "$OVERLAY_PKG" SYSTEM_ALERT_WINDO
 echo "app verifier:     $(adb shell settings get global package_verifier_enable | tr -d '\r') (1 rejects apps not signed by Facebook)"
 echo "portal theme:     $(adb shell cmd overlay list | tr -d '\r' | grep "$THEME_RRO") ([x] hides the install dialog's text)"
 echo "high contrast:    $(adb shell settings get secure high_text_contrast_enabled | tr -d '\r') (1 outlines every string, so none can vanish)"
+echo "media controls:   $(adb shell settings get secure enabled_notification_listeners \
+  | tr -d '\r' | grep -q "$PKG" && echo "granted" || echo "MISSING") (notification access)"

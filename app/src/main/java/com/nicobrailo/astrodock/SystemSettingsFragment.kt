@@ -131,7 +131,17 @@ class SystemSettingsFragment : Fragment() {
                 done = AndroidSettings.Secure
                     .getString(context.contentResolver, "enabled_notification_listeners")
                     ?.contains(context.packageName) == true,
-                intent = Intent("android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"),
+                // The action really is spelled with the ACTION_ prefix in its
+                // own value, unlike every other one here, so this is not the
+                // constant's name left behind by mistake. It resolves to
+                // com.android.settings/.Settings$NotificationAccessSettingsActivity
+                // and starts it, but on the Portal that screen finishes itself
+                // about 40ms after it resumes, with nothing in the log, so the
+                // button looks dead there and the description says what to run
+                // instead. Measured with astrodock stopped too, so it isn't
+                // ours; the screensaver and overlay screens in the same app are
+                // fine. Kept because it is the one tap that works elsewhere.
+                intent = Intent(AndroidSettings.ACTION_NOTIFICATION_LISTENER_SETTINGS),
             ),
             Item(
                 title = getString(R.string.system_install_title),

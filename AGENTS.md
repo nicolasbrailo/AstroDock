@@ -90,7 +90,11 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
 - `media/NowPlaying.kt` + `media/MediaListenerService.kt`: what another app is
   playing, and the controls for it, through `MediaSessionManager`. Reading it
   needs notification access, which is granted to the (otherwise empty)
-  notification listener service; without it the panel stays hidden.
+  notification listener service; without it the panel stays hidden. On the
+  Portal only adb can grant it, so `tools/setup-device.sh` does (see the
+  platform notes); the System tab's button opens a screen that closes itself.
+  The app reads the sessions once when it starts, so it has to be restarted
+  after the grant.
   Apps leave stale sessions behind: Jellyfin keeps one that claims to be playing
   for days, and it ignores even the system's own pause. So a session claiming to
   play is only believed while `AudioManager.isMusicActive` is true (or it plays
@@ -335,10 +339,12 @@ documents the API). Keep the two behaving the same.
   hidden.
 - The bottom right corner shows what another app is playing (title, artist and
   album, artwork when the app provides one) with previous, play/pause and next.
-  The screensaver shows the text but no buttons, since a touch ends it. Grant
-  notification access in the System tab, or with
+  The screensaver shows the text but no buttons, since a touch ends it.
+  `tools/setup-device.sh` grants the notification access this needs; by hand it
+  is
   `adb shell cmd notification allow_listener com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService`
-  (`disallow_listener` to revoke).
+  (`disallow_listener` to revoke). The System tab's button is no use on the
+  Portal, which is why the script does it.
 - Errors are shown in a text overlay over the picture.
 - Whatever is wrong with the MQTT broker is shown in the top right corner (see
   `StateReporter`). Only the home screen shows it: the screensaver is what runs
@@ -497,10 +503,24 @@ settings reset the slideshow.
   (`TextContrast`); the overlay needs `CHANGE_OVERLAY_PACKAGES`, which is
   `signature|privileged` with no `development` flag, so `pm grant` can't hand
   it over and adb stays the only way to that one.
+- **The system's notification access screen closes itself**, so nothing on the
+  device can turn the media panel on. `Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS`
+  (whose value really does repeat the `ACTION_` prefix, unlike its `_DETAIL_`
+  sibling, so it looks like a mistake and isn't) resolves to
+  `com.android.settings/.Settings$NotificationAccessSettingsActivity` and starts
+  it: the log shows it created, its fragment switched in and resumed, and then
+  gone about 40ms later, with no exception and no permission denial. Measured
+  with astrodock force-stopped and the Portal's own settings in front too, so
+  it isn't ours, and `ACTION_NOTIFICATION_SETTINGS` goes the same way; the
+  screensaver and overlay screens in the same app stay up fine, and
+  `android.settings.SETTINGS` opens the Portal's own settings app
+  (`com.facebook.alohaapps.settings`), which has no screen for this. So
+  `tools/setup-device.sh` grants it over adb, like the secure settings.
 - `tools/setup-device.sh` takes no arguments: it applies everything an app can't
   set for itself (home screen, screensaver, bug pill, app verifier, the theme
-  that hides the install dialog) and prints the result. Its header lists the
-  commands to undo each one. Everything else is granted from the System tab.
+  that hides the install dialog, notification access) and prints the result.
+  Its header lists the commands to undo each one. Everything else is granted
+  from the System tab.
 - `sleep_timeout` does not stick: it was back at the Portal's 1200000 twice
   after the device dreamt and woke again, so something on the Portal resets it.
   Don't rely on it; to control when the screen goes off, use the device admin

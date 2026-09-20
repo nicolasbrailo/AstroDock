@@ -83,7 +83,7 @@
     <string name="media_previous">Previous</string>
 
     <string name="system_media_title">Media controls</string>
-    <string name="system_media_description">Lets the slideshow show and control what other apps are playing, e.g. Jellyfin. Turn AstroDock on in the list that opens.</string>
+    <string name="system_media_description">Lets the slideshow show and control what other apps are playing, e.g. Jellyfin. Turn AstroDock on in the list that opens. The Portal closes that list again as it appears, and then adb is the only way:\n\nadb shell cmd notification allow_listener com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService</string>
     <string name="system_media_button">Open notification access</string>
 
     <string name="settings_category_screen">Screen</string>
