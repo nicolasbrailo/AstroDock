@@ -25,7 +25,16 @@ interface AlbumSource {
     suspend fun listAlbumPictures(albumId: String): List<ImmichPicture>
 }
 
-data class ImmichAlbum(val id: String, val name: String, val assetCount: Int)
+// startDate and endDate are when its oldest and newest pictures were taken
+// (ISO 8601, UTC). They are "" for an album the server gave none for, which is
+// any album with no assets.
+data class ImmichAlbum(
+    val id: String,
+    val name: String,
+    val assetCount: Int,
+    val startDate: String = "",
+    val endDate: String = "",
+)
 
 data class ImmichPicture(
     val id: String,
@@ -84,7 +93,9 @@ class ImmichClient(host: String, val apiKey: String) : AlbumSource {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    // Fetches every album visible to the API key
+    // Fetches every album visible to the API key. There is no server side
+    // filtering worth asking for (/albums only matches an exact name), so the
+    // whole list comes back and AlbumFilter chooses from it.
     override suspend fun listAlbums(): List<ImmichAlbum> {
         val albums = getJson("/albums") as? JSONArray
             ?: throw ImmichException("Unexpected /albums response: not an array")
@@ -94,6 +105,8 @@ class ImmichClient(host: String, val apiKey: String) : AlbumSource {
                 id = album.str("id"),
                 name = album.str("albumName"),
                 assetCount = album.optInt("assetCount", 0),
+                startDate = album.str("startDate"),
+                endDate = album.str("endDate"),
             )
         }
     }

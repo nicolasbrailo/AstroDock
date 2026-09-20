@@ -40,6 +40,31 @@
             app:showSeekBarValue="true" />
     </PreferenceCategory>
 
+    <PreferenceCategory app:title="@string/settings_category_albums">
+        <EditTextPreference
+            app:key="album_name_include"
+            app:title="@string/settings_album_include"
+            app:dialogMessage="@string/settings_album_include_hint"
+            app:useSimpleSummaryProvider="true" />
+        <EditTextPreference
+            app:key="album_name_exclude"
+            app:title="@string/settings_album_exclude"
+            app:dialogMessage="@string/settings_album_exclude_hint"
+            app:useSimpleSummaryProvider="true" />
+        <EditTextPreference
+            app:key="album_from_year"
+            app:title="@string/settings_album_from_year"
+            app:dialogMessage="@string/settings_album_year_hint"
+            app:defaultValue="0"
+            app:useSimpleSummaryProvider="true" />
+        <EditTextPreference
+            app:key="album_to_year"
+            app:title="@string/settings_album_to_year"
+            app:dialogMessage="@string/settings_album_year_hint"
+            app:defaultValue="0"
+            app:useSimpleSummaryProvider="true" />
+    </PreferenceCategory>
+
     <PreferenceCategory app:title="@string/settings_category_screen">
         <SeekBarPreference
             android:max="30"

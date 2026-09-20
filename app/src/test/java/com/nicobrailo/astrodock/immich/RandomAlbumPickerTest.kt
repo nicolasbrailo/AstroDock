@@ -22,9 +22,14 @@ class RandomAlbumPickerTest {
             albums.entries.first { it.key.id == albumId }.value.map { ImmichPicture(it, "", "") }
     }
 
-    private fun album(pictures: Int, assetCount: Int = pictures): Pair<ImmichAlbum, List<String>> {
+    private fun album(
+        pictures: Int,
+        assetCount: Int = pictures,
+        name: String? = null,
+    ): Pair<ImmichAlbum, List<String>> {
         val id = UUID.randomUUID().toString()
-        return ImmichAlbum(id, "album $id", assetCount) to List(pictures) { UUID.randomUUID().toString() }
+        return ImmichAlbum(id, name ?: "album $id", assetCount) to
+            List(pictures) { UUID.randomUUID().toString() }
     }
 
     @Test
@@ -77,5 +82,19 @@ class RandomAlbumPickerTest {
     @Test(expected = ImmichException::class)
     fun failsIfNoAlbumHasPictures() = runTest {
         RandomAlbumPicker(FakeSource(mapOf(album(0, assetCount = 3))), 0, 0).next()
+    }
+
+    @Test
+    fun onlyVisitsTheAlbumsTheFilterKeeps() = runTest {
+        val wanted = album(3, name = "portalgo-pets")
+        val source = FakeSource(mapOf(wanted, album(3, name = "Screenshots"), album(3, name = "Trips")))
+        val picker = RandomAlbumPicker(source, 0, 0, AlbumFilter(include = "portalgo-*"))
+        repeat(9) { assertEquals(wanted.first, picker.next().album) }
+    }
+
+    @Test(expected = ImmichException::class)
+    fun failsIfTheFilterKeepsNoAlbum() = runTest {
+        val source = FakeSource(mapOf(album(3, name = "Trips")))
+        RandomAlbumPicker(source, 0, 0, AlbumFilter(include = "nothing-*")).next()
     }
 }

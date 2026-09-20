@@ -1,9 +1,14 @@
 package com.nicobrailo.astrodock.mqtt
 
+import com.nicobrailo.astrodock.immich.AlbumFilter
+
 // The commands from the homeboard bridge's spec that mean something here.
 //
 // Its other commands (set_svg_overlay, set_render_config, set_embed_qr,
 // set_target_size) belong to the homeboard's own renderer and are dropped.
+// One of these is not from the spec: set_album_filter, which chooses the albums
+// the slideshow takes pictures from (see AlbumFilter). The homeboard reads its
+// pictures from disk, so it has nothing to say about Immich albums.
 sealed interface Command {
     object Next : Command
     object Previous : Command
@@ -13,6 +18,8 @@ sealed interface Command {
     // timeoutSeconds 0 means it stays until something replaces it; an empty
     // message clears whatever is on screen
     data class Announce(val message: String, val timeoutSeconds: Int) : Command
+    // The whole filter, so whatever the payload leaves out is cleared
+    data class SetAlbumFilter(val filter: AlbumFilter) : Command
 }
 
 // Which command a topic asks for. The payload is parsed separately, because
@@ -24,6 +31,7 @@ enum class CommandKind {
     FORCE_OFF,
     TRANSITION_SECONDS,
     ANNOUNCE,
+    ALBUM_FILTER,
 }
 
 object Commands {
@@ -39,6 +47,7 @@ object Commands {
             "cmd/presence/force_off" -> CommandKind.FORCE_OFF
             "cmd/ambience/set_transition_time_secs" -> CommandKind.TRANSITION_SECONDS
             "cmd/ambience/announce" -> CommandKind.ANNOUNCE
+            "cmd/ambience/set_album_filter" -> CommandKind.ALBUM_FILTER
             else -> null
         }
     }

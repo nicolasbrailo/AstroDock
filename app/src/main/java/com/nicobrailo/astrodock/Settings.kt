@@ -2,6 +2,7 @@ package com.nicobrailo.astrodock
 
 import android.content.Context
 import androidx.preference.PreferenceManager
+import com.nicobrailo.astrodock.immich.AlbumFilter
 
 // User settings, stored in the default SharedPreferences and edited in
 // SettingsActivity (res/xml/preferences.xml). The keys below must match the
@@ -12,6 +13,8 @@ data class Settings(
     val apiKey: String,
     val maxPicturesPerAlbum: Int, // 0: no limit
     val percentOfAlbum: Int,      // 0: all of it
+    // Which of the server's albums the pictures come from; empty means all
+    val albumFilter: AlbumFilter,
     val slideSeconds: Int,
     // How long the Portal waits, after it last saw someone, before switching
     // the screen off. 0 leaves the system's own value alone.
@@ -28,6 +31,10 @@ data class Settings(
         const val KEY_API_KEY = "api_key"
         const val KEY_MAX_PICTURES = "max_pictures_per_album"
         const val KEY_PERCENT = "percent_of_album"
+        const val KEY_ALBUM_INCLUDE = "album_name_include"
+        const val KEY_ALBUM_EXCLUDE = "album_name_exclude"
+        const val KEY_ALBUM_FROM_YEAR = "album_from_year"
+        const val KEY_ALBUM_TO_YEAR = "album_to_year"
         const val KEY_SLIDE_SECONDS = "slide_seconds"
         const val KEY_SCREEN_OFF_MINUTES = "screen_off_minutes"
         const val KEY_NIGHT_SCREEN_OFF = "night_screen_off"
@@ -44,6 +51,8 @@ data class Settings(
         // Valid values of each numeric setting; SettingsActivity rejects the rest
         val MAX_PICTURES_RANGE = 0..100_000
         val PERCENT_RANGE = 0..100
+        // 0 means that end of the album filter's range is open
+        val YEAR_RANGE = 0..9999
         // The sliders' ranges; see res/xml/preferences.xml for their steps
         val SLIDE_SECONDS_RANGE = 5..300
         val SCREEN_OFF_MINUTES_RANGE = 0..30
@@ -73,6 +82,12 @@ data class Settings(
                 apiKey = prefs.getString(KEY_API_KEY, null)?.trim().orEmpty(),
                 maxPicturesPerAlbum = int(KEY_MAX_PICTURES, DEFAULT_MAX_PICTURES, MAX_PICTURES_RANGE),
                 percentOfAlbum = int(KEY_PERCENT, DEFAULT_PERCENT, PERCENT_RANGE),
+                albumFilter = AlbumFilter(
+                    include = prefs.getString(KEY_ALBUM_INCLUDE, null)?.trim().orEmpty(),
+                    exclude = prefs.getString(KEY_ALBUM_EXCLUDE, null)?.trim().orEmpty(),
+                    fromYear = int(KEY_ALBUM_FROM_YEAR, 0, YEAR_RANGE),
+                    toYear = int(KEY_ALBUM_TO_YEAR, 0, YEAR_RANGE),
+                ),
                 slideSeconds = slider(KEY_SLIDE_SECONDS, DEFAULT_SLIDE_SECONDS, SLIDE_SECONDS_RANGE),
                 screenOffMinutes = slider(
                     KEY_SCREEN_OFF_MINUTES, DEFAULT_SCREEN_OFF_MINUTES, SCREEN_OFF_MINUTES_RANGE

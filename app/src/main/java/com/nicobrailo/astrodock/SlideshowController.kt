@@ -24,6 +24,7 @@ import coil3.request.ErrorResult
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.size.ViewSizeResolver
+import com.nicobrailo.astrodock.immich.AlbumFilter
 import com.nicobrailo.astrodock.immich.AlbumPicture
 import com.nicobrailo.astrodock.immich.ImmichClient
 import com.nicobrailo.astrodock.immich.ImmichPictureInfo
@@ -365,6 +366,7 @@ class SlideshowController(
                 restartTimer()
             }
             is Command.TransitionSeconds -> setTransitionSeconds(command.seconds)
+            is Command.SetAlbumFilter -> setAlbumFilter(command.filter)
             is Command.Announce -> announce(command.message, command.timeoutSeconds)
             else -> Unit // Screen commands: the reporter deals with those
         }
@@ -379,6 +381,29 @@ class SlideshowController(
         state.reloadSettings(context)
         restartTimer()
         Log.i(TAG, "Now ${seconds}s per picture")
+    }
+
+    // Chooses the albums the pictures come from. Like the transition time this
+    // goes through the settings, so it sticks and the settings screen agrees.
+    // Whatever is on screen may come from an album the new filter leaves out,
+    // so the slideshow starts again from a freshly picked picture.
+    private fun setAlbumFilter(filter: AlbumFilter) {
+        PreferenceManager.getDefaultSharedPreferences(context)
+            .edit()
+            .putString(Settings.KEY_ALBUM_INCLUDE, filter.include)
+            .putString(Settings.KEY_ALBUM_EXCLUDE, filter.exclude)
+            .putString(Settings.KEY_ALBUM_FROM_YEAR, filter.fromYear.toString())
+            .putString(Settings.KEY_ALBUM_TO_YEAR, filter.toYear.toString())
+            .apply()
+        if (state.reloadSettings(context)) {
+            pageAnimator?.cancel()
+            for (slot in listOf(prev, cur, next)) bind(slot, null)
+            setOffset(0f)
+            showStatus(context.getString(R.string.slideshow_loading))
+        }
+        syncPictures()
+        restartTimer()
+        Log.i(TAG, "Album filter: $filter")
     }
 
     // Shows a message over the pictures. An empty message clears it, and a

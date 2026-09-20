@@ -7,13 +7,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class InstallableTest {
-    private val wanted = listOf("AstroDock-debug.apk", "app-debug.apk", "AstroDock.apk", "app-release.apk")
+    private val wanted = listOf(
+        "AstroDock-debug.apk", "app-debug.apk",
+        "AstroDock.apk", "AstroDock-release.apk", "app-release.apk",
+    )
 
     @Test
     fun picksTheBestNameTheReleaseHas() {
         assertEquals(
             "AstroDock-debug.apk",
             pickApkAsset(listOf("AstroDock.apk", "AstroDock-debug.apk"), wanted),
+        )
+        // The two tools/build-apks.sh makes, debug first
+        assertEquals(
+            "AstroDock-debug.apk",
+            pickApkAsset(listOf("AstroDock-debug.apk", "AstroDock-release.apk"), wanted),
         )
         // What the releases hold today, with no debug build published
         assertEquals("AstroDock.apk", pickApkAsset(listOf("AstroDock.apk"), wanted))

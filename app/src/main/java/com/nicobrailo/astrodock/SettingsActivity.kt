@@ -67,6 +67,8 @@ class SettingsActivity : AppCompatActivity() {
 
             numberPreference(Settings.KEY_MAX_PICTURES, Settings.MAX_PICTURES_RANGE)
             numberPreference(Settings.KEY_PERCENT, Settings.PERCENT_RANGE)
+            numberPreference(Settings.KEY_ALBUM_FROM_YEAR, Settings.YEAR_RANGE)
+            numberPreference(Settings.KEY_ALBUM_TO_YEAR, Settings.YEAR_RANGE)
             numberPreference(Settings.KEY_NIGHT_START_HOUR, Settings.HOUR_RANGE)
             numberPreference(Settings.KEY_NIGHT_END_HOUR, Settings.HOUR_RANGE)
         }

@@ -16,6 +16,14 @@
     <string name="settings_percent_hint">Show this percentage (0–100) of each album\'s pictures, then apply the max above. 0 means all of them.</string>
     <string name="settings_slide_seconds">Seconds per picture</string>
     <string name="settings_slide_seconds_hint">Seconds each picture stays on screen</string>
+    <string name="settings_category_albums">Albums</string>
+    <string name="settings_album_include">Only these albums</string>
+    <string name="settings_album_include_hint">Names of the albums to show, separated by commas. Use * for any characters, e.g. portalgo-*. Leave empty for every album.</string>
+    <string name="settings_album_exclude">Except these albums</string>
+    <string name="settings_album_exclude_hint">Names of the albums to leave out, separated by commas, with * as above. Checked after the list above, so it wins.</string>
+    <string name="settings_album_from_year">From year</string>
+    <string name="settings_album_to_year">To year</string>
+    <string name="settings_album_year_hint">Only albums holding pictures from this year onwards (or up to it). 0 means no limit. Albums the server gives no dates for are left out when either year is set.</string>
     <string name="settings_invalid_number">Enter a number between %1$d and %2$d</string>
 
     <string name="slideshow_not_configured">Tap the screen, then the settings button, to set the Immich server URL and API key.</string>

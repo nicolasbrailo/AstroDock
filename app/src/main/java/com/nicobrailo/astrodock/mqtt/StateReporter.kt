@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.nicobrailo.astrodock.ScreenControl
 import com.nicobrailo.astrodock.Settings
+import com.nicobrailo.astrodock.immich.AlbumFilter
 import com.nicobrailo.astrodock.immich.ImmichPictureInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -294,6 +295,26 @@ class StateReporter private constructor(private val context: Context) {
             val json = JSONObject(payload)
             // timeout 0 means it stays until something replaces it
             Command.Announce(json.optString("msg"), json.optInt("timeout", 0).coerceAtLeast(0))
+        }
+        // {"name":"holidays-*,Pets","exclude":"Screenshots","from_year":2019,"to_year":2021}
+        // Every field is optional and the payload replaces the whole filter, so
+        // "{}" shows every album again.
+        CommandKind.ALBUM_FILTER -> {
+            val json = JSONObject(payload)
+            val from = json.optInt("from_year", 0)
+            val to = json.optInt("to_year", 0)
+            if (from !in Settings.YEAR_RANGE || to !in Settings.YEAR_RANGE) {
+                null
+            } else {
+                Command.SetAlbumFilter(
+                    AlbumFilter(
+                        include = json.optString("name").trim(),
+                        exclude = json.optString("exclude").trim(),
+                        fromYear = from,
+                        toYear = to,
+                    )
+                )
+            }
         }
     }
 

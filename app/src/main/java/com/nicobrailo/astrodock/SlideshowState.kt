@@ -80,7 +80,8 @@ class SlideshowState private constructor() {
             old.serverUrl == newSettings.serverUrl &&
             old.apiKey == newSettings.apiKey &&
             old.maxPicturesPerAlbum == newSettings.maxPicturesPerAlbum &&
-            old.percentOfAlbum == newSettings.percentOfAlbum
+            old.percentOfAlbum == newSettings.percentOfAlbum &&
+            old.albumFilter == newSettings.albumFilter
         if (samePictures) {
             // Pick up albums added on the server since the list was fetched
             picker?.refresh()
@@ -97,7 +98,9 @@ class SlideshowState private constructor() {
         }
         val c = ImmichClient(newSettings.serverUrl, newSettings.apiKey)
         client = c
-        picker = RandomAlbumPicker(c, newSettings.maxPicturesPerAlbum, newSettings.percentOfAlbum)
+        picker = RandomAlbumPicker(
+            c, newSettings.maxPicturesPerAlbum, newSettings.percentOfAlbum, newSettings.albumFilter
+        )
         return true
     }
 

@@ -21,6 +21,15 @@ it up to date when the design changes.
   pushes the settings to the device and restarts the app, so they don't have
   to be typed on the touch screen. Only works with debug builds, since it uses
   `run-as`.
+- `tools/build-apks.sh [OUT_DIR]`: runs the unit tests, builds both APKs and
+  leaves them in `~/Downloads` as `AstroDock-debug.apk` and
+  `AstroDock-release.apk`, the names the Apps tab looks for in a GitHub
+  release. Upload the debug one: `run-as` needs it, and so do the two scripts
+  below. It prints each APK's sha256, which is what the Apps tab compares with
+  the digest GitHub publishes. AGP signs a release build with the debug
+  keystore too, since `app/build.gradle.kts` has no signing config; keeping
+  that key is what lets an installed AstroDock be updated rather than removed
+  first.
 - `tools/force-uninstall.sh [PACKAGE]`: uninstalls the app. Needed because
   `adb uninstall` fails with `DELETE_FAILED_DEVICE_POLICY_MANAGER` once the
   user has granted the device admin: an active admin can't be uninstalled, and
@@ -48,8 +57,15 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   a picture's metadata (`GET /assets/{id}`, including EXIF and people) and
   builds picture URLs. Every failure is an `ImmichException`. `AlbumSource` is the
   interface the picker uses, so tests can fake the server.
+- `immich/AlbumFilter.kt`: which of the server's albums the slideshow uses, by
+  name (comma separated globs, to keep and to leave out) and by the years its
+  pictures were taken. It is all done here, on the album list, because Immich
+  can't help: `GET /albums` only filters by an exact name or by ownership. The
+  list already carries the name and `startDate`/`endDate` of every album, so
+  filtering costs no extra request. Pure functions, unit tested.
 - `immich/RandomAlbumPicker.kt`: decides which picture comes next (see below).
-  Returns an `AlbumPicture`: the picture ID plus the album it came from.
+  Returns an `AlbumPicture`: the picture ID plus the album it came from. Albums
+  its `AlbumFilter` doesn't keep are left out of the rotation.
 - `PictureDescription.kt`: turns metadata into the slideshow's overlay text.
 - `PictureHistory.kt`: the pictures the user can swipe back through.
 - `Settings.kt`: settings stored in SharedPreferences: keys, defaults and valid
@@ -109,8 +125,12 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   retained, QoS 0. It also subscribes to `<prefix>cmd/#` and carries out the
   commands that mean something here (`mqtt/Command.kt`): `ambience/next`,
   `ambience/prev`, `ambience/set_transition_time_secs` (`{"secs":n}`, saved as
-  the slideshow setting) and `ambience/announce` (`{"timeout":n,"msg":"..."}`,
-  shown over the pictures; timeout 0 stays up, an empty message clears it) go to
+  the slideshow setting), `ambience/announce` (`{"timeout":n,"msg":"..."}`,
+  shown over the pictures; timeout 0 stays up, an empty message clears it) and
+  `ambience/set_album_filter`
+  (`{"name":"holidays-*,Pets","exclude":"Screenshots","from_year":2019,"to_year":2021}`,
+  saved as the album settings; every field is optional and the payload replaces
+  the whole filter, so `{}` shows every album again) go to
   whichever slideshow is on screen, while `presence/force_on` (a wake lock, 30
   min) and `presence/force_off` (device admin lock, so it needs "Turn the screen
   off" from the System tab) are handled by the reporter itself, because they
@@ -226,7 +246,8 @@ documents the API). Keep the two behaving the same.
   fails, the old list is kept.
 - Albums are visited in a random order, each once per round, and a new round
   never starts with the album that was just shown. Albums with `assetCount == 0`
-  are skipped.
+  are skipped, as are the ones the `AlbumFilter` leaves out (not in
+  libimmich-random, which shows every album).
 - From each album it takes a random sample of its images, in album order
   (oldest first), using selection sampling (Knuth's Algorithm S). The sample
   size is `percent`% of the album (rounded, at least 1; 0 means 100%), then
@@ -302,7 +323,14 @@ documents the API). Keep the two behaving the same.
 
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album
-(default 0 = all) and seconds per picture (default 30). Under "Screen": how long
+(default 0 = all) and seconds per picture (default 30). Under "Albums", the
+`AlbumFilter`: the album names to show and the ones to leave out (comma
+separated, `*` and `?` are wildcards, matching the whole name, case
+insensitive), and a year range (0 at either end means no limit; an album the
+server gives no dates for is left out as soon as a year is set). All four are
+empty by default, which shows every album. Changing any of them restarts the
+slideshow, since whatever is on screen may come from an album that is now
+filtered out. Under "Screen": how long
 after the Portal last saw someone the screen switches off (a slider, 0 leaves
 the system's value alone) and an opt-in "turn the screen off at night" with its hours
 (default 00:00 to 06:00, off).

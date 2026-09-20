@@ -19,6 +19,9 @@ data class AlbumPicture(val id: String, val album: ImmichAlbum)
 // maxPictures=20 and percent=50, an album of 30 pictures yields 15 and one of
 // 100 yields 20.
 //
+// Albums the AlbumFilter doesn't keep are left out of the rotation altogether,
+// as if the server didn't have them.
+//
 // Synchronisation: `lock` serialises next(), which is the only function that
 // touches the state below it (and the network). refresh() only sets `stale`, an
 // atomic, so it never waits for a next() that is blocked on the network.
@@ -26,6 +29,9 @@ class RandomAlbumPicker(
     private val source: AlbumSource,
     private val maxPictures: Int,
     percent: Int,
+    // Which albums to take pictures from. The server can't filter the list, so
+    // the whole list is fetched and this chooses from it.
+    private val filter: AlbumFilter = AlbumFilter(),
     private val random: Random = Random.Default,
 ) {
     private val percent: Int = if (percent == 0) 100 else percent
@@ -90,7 +96,7 @@ class RandomAlbumPicker(
         }
 
         albums = fetched
-        order = fetched.filter { it.assetCount > 0 }.toMutableList()
+        order = fetched.filter { it.assetCount > 0 && filter.keeps(it) }.toMutableList()
         orderPos = order.size // Makes the next pick start a new round
     }
 
@@ -166,6 +172,9 @@ class RandomAlbumPicker(
             if (sample.isNotEmpty()) return
         }
 
+        if (order.isEmpty() && !filter.isEmpty && albums?.isNotEmpty() == true) {
+            throw ImmichException("No album matches the album filter")
+        }
         throw ImmichException("No album has any pictures")
     }
 

@@ -66,8 +66,10 @@ val INSTALLABLE_APPS = listOf(
         // both go through run-as, which only works on a debuggable app. The
         // release so far is named AstroDock.apk, and app-debug/app-release are
         // what Gradle calls its output.
+        // tools/build-apks.sh builds the first and the fourth of these
         githubAssets = listOf(
-            "AstroDock-debug.apk", "app-debug.apk", "AstroDock.apk", "app-release.apk",
+            "AstroDock-debug.apk", "app-debug.apk",
+            "AstroDock.apk", "AstroDock-release.apk", "app-release.apk",
         ),
     ),
     Installable(

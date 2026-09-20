@@ -18,6 +18,10 @@ class CommandsTest {
             Commands.kind("${prefix}cmd/ambience/set_transition_time_secs", prefix)
         )
         assertEquals(CommandKind.ANNOUNCE, Commands.kind("${prefix}cmd/ambience/announce", prefix))
+        assertEquals(
+            CommandKind.ALBUM_FILTER,
+            Commands.kind("${prefix}cmd/ambience/set_album_filter", prefix)
+        )
     }
 
     @Test
