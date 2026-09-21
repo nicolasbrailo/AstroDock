@@ -232,4 +232,14 @@
         android:textColor="@android:color/white"
         android:textSize="18sp"
         android:visibility="gone" />
+
+    <!-- Covers everything during the night hours, when the screen can't be
+         kept off (see SlideshowController.checkNight). On top, so it also
+         takes the first touch, which only uncovers the pictures. -->
+    <View
+        android:id="@+id/night_cover"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/black"
+        android:visibility="gone" />
 </FrameLayout>

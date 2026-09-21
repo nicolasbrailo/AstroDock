@@ -453,6 +453,10 @@ class StateReporter private constructor(private val context: Context) {
             // Played whether or not anything is on screen: that is when it's
             // most likely to matter
             is Command.AnnounceAudio -> {
+                if (!MqttSettings.audioAnnouncementsAllowed(context)) {
+                    Log.i(TAG, "Audio announcements are off, not playing ${command.uri}")
+                    return
+                }
                 val message = command.message ?: context.getString(R.string.announce_audio_default_msg)
                 // Stays up while it plays, since nobody knows how long that
                 // is until it's over. Anything shown in the meantime wins,

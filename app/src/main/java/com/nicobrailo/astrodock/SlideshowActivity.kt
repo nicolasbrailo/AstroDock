@@ -19,7 +19,7 @@ class SlideshowActivity : AppCompatActivity() {
         val root = findViewById<View>(R.id.root)
         hideSystemBars()
 
-        slideshow = SlideshowController(this, root, lifecycleScope, interactive = true) {
+        slideshow = SlideshowController(this, window, root, lifecycleScope, interactive = true) {
             startActivity(Intent(this, AppListActivity::class.java))
             @Suppress("DEPRECATION") // The replacement needs API 34
             overridePendingTransition(android.R.anim.fade_in, android.R.anim.fade_out)

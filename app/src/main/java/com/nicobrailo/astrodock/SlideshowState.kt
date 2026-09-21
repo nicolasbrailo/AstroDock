@@ -57,6 +57,11 @@ class SlideshowState private constructor() {
         lastTouchAt = SystemClock.elapsedRealtime()
     }
 
+    // When the night rule last turned the screen off, or null if it hasn't.
+    // Shared because the Portal's wake starts a new screensaver, which has to
+    // know the screen it is on was switched off moments ago.
+    var lastNightLockAt: Long? = null
+
     // The picture on screen and its neighbours
     val current: AlbumPicture? get() = history.current
     val previous: AlbumPicture? get() = history.peekBack()

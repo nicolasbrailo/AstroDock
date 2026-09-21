@@ -31,6 +31,7 @@ data class MqttSettings(
         const val KEY_USER = "mqtt_user"
         const val KEY_PASSWORD = "mqtt_password"
         const val KEY_TOPIC_PREFIX = "mqtt_topic_prefix"
+        const val KEY_AUDIO_ANNOUNCEMENTS = "mqtt_audio_announcements"
 
         const val DEFAULT_PORT = 1883
         val PORT_RANGE = 1..65535
@@ -78,6 +79,13 @@ data class MqttSettings(
         // disconnects the older client when a second one uses its id
         fun defaultClientId(context: Context): String =
             "${topicName(systemName(context))}-${machineId(context).take(8)}"
+
+        // Whether announce_audio may play anything. Not part of MqttSettings,
+        // since changing it has nothing to do with the connection: it is read
+        // as each command arrives, so switching it off silences the next one
+        // without reconnecting.
+        fun audioAnnouncementsAllowed(context: Context): Boolean =
+            PreferenceManager.getDefaultSharedPreferences(context).getBoolean(KEY_AUDIO_ANNOUNCEMENTS, true)
 
         // Device names are free text ("Nico's Portal"), topics are not
         fun topicName(raw: String): String = raw.trim().lowercase()

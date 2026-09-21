@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Lighter, so it still reads on a dark background -->
+    <color name="error_text">#FFEF5350</color>
+    <color name="ok_text">#FF66BB6A</color>
+</resources>

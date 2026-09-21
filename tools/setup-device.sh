@@ -11,7 +11,11 @@
 # accepts apps signed by Facebook and fails every other install with "App
 # certificate rejected" (adb installs are never verified), makes the system's
 # install dialog readable again (see below), and grants the notification access
-# the media controls need, which on the Portal only adb can do (see below).
+# the media controls need and the device admin that turns the screen off at
+# night, which on the Portal only adb can do (see below). It also grants the
+# permissions the System tab could ask for on the device (changing system
+# settings, drawing over other apps, installing apps), so one run leaves that
+# tab with nothing missing.
 # To undo any of it:
 #
 #   adb shell cmd package set-home-activity com.facebook.alohaapps.launcher
@@ -24,9 +28,12 @@
 #   adb shell settings put secure high_text_contrast_enabled 0
 #   adb shell cmd notification disallow_listener \
 #     com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService
+#   adb shell appops set com.nicobrailo.astrodock WRITE_SETTINGS default
+#   adb shell appops set com.nicobrailo.astrodock SYSTEM_ALERT_WINDOW default
+#   adb shell appops set com.nicobrailo.astrodock REQUEST_INSTALL_PACKAGES default
 #
-# The rest of what the app needs (device admin, system settings, installing
-# apps) is granted from the System tab of its settings.
+# The device admin can't be removed with dpm (only a testOnly one can);
+# tools/force-uninstall.sh gets rid of it along with the app.
 set -euo pipefail
 
 if [[ $# -ne 0 ]]; then
@@ -73,6 +80,17 @@ adb shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS
 # the screensaver and overlay screens in the same app stay up fine.
 adb shell cmd notification allow_listener \
   "$PKG/com.nicobrailo.astrodock.media.MediaListenerService"
+# The device admin, which is what lets the night rule turn the screen off. The
+# System tab's button opens the system's dialog, but on the Portal that says
+# "Device management policies are not supported" and activates nothing, while
+# the same grant from adb works. Setting it again when it is already active is
+# harmless.
+adb shell dpm set-active-admin "$PKG/.ScreenAdminReceiver" >/dev/null
+# These three have screens on the device, but granting them here saves the
+# taps. They are app-ops, which is what those screens set.
+adb shell appops set "$PKG" WRITE_SETTINGS allow
+adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow
+adb shell appops set "$PKG" REQUEST_INSTALL_PACKAGES allow
 
 adb shell appops set "$OVERLAY_PKG" SYSTEM_ALERT_WINDOW deny
 adb shell am force-stop "$OVERLAY_PKG"
@@ -96,5 +114,10 @@ echo "bug pill overlay: $(adb shell appops get "$OVERLAY_PKG" SYSTEM_ALERT_WINDO
 echo "app verifier:     $(adb shell settings get global package_verifier_enable | tr -d '\r') (1 rejects apps not signed by Facebook)"
 echo "portal theme:     $(adb shell cmd overlay list | tr -d '\r' | grep "$THEME_RRO") ([x] hides the install dialog's text)"
 echo "high contrast:    $(adb shell settings get secure high_text_contrast_enabled | tr -d '\r') (1 outlines every string, so none can vanish)"
+echo "screen off admin: $(adb shell dumpsys device_policy | tr -d '\r' \
+  | grep -q "$PKG/.ScreenAdminReceiver" && echo "granted" || echo "MISSING") (night screen off)"
+for op in WRITE_SETTINGS SYSTEM_ALERT_WINDOW REQUEST_INSTALL_PACKAGES; do
+  printf '%-18s%s\n' "$op:" "$(adb shell appops get "$PKG" "$op" | tr -d '\r' | head -1)"
+done
 echo "media controls:   $(adb shell settings get secure enabled_notification_listeners \
   | tr -d '\r' | grep -q "$PKG" && echo "granted" || echo "MISSING") (notification access)"

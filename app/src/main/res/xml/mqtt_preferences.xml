@@ -46,4 +46,12 @@
             app:selectable="false"
             app:title="@string/mqtt_topics" />
     </PreferenceCategory>
+
+    <PreferenceCategory app:title="@string/mqtt_category_commands">
+        <SwitchPreferenceCompat
+            app:defaultValue="true"
+            app:key="mqtt_audio_announcements"
+            app:summary="@string/mqtt_audio_announcements_summary"
+            app:title="@string/mqtt_audio_announcements" />
+    </PreferenceCategory>
 </PreferenceScreen>

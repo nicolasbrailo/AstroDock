@@ -3,6 +3,7 @@ package com.nicobrailo.astrodock
 import android.service.dreams.DreamService
 import android.view.MotionEvent
 import android.view.View
+import android.view.WindowManager
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,7 +54,17 @@ class SlideshowDreamService : DreamService() {
         val root = findViewById<View>(R.id.root)
         val newScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope = newScope
-        slideshow = SlideshowController(this, root, newScope, interactive = false) {}
+        slideshow = SlideshowController(this, window, root, newScope, interactive = false) {}
+    }
+
+    // DreamService drops changes to its window's attributes once the window is
+    // up, where an activity hands them to the window manager, so the night
+    // rule's backlight setting did nothing in the screensaver (measured: no
+    // override in dumpsys power). This passes them on the way an activity does.
+    override fun onWindowAttributesChanged(attrs: WindowManager.LayoutParams) {
+        super.onWindowAttributesChanged(attrs)
+        val decor = window?.peekDecorView() ?: return
+        if (decor.isAttachedToWindow) window.windowManager.updateViewLayout(decor, attrs)
     }
 
     override fun onDreamingStarted() {

@@ -23,7 +23,8 @@ it up to date when the design changes.
   `--slide-seconds`, the album filter's `--album-include`,
   `--album-exclude`, `--album-from-year`, `--album-to-year`, the weather's
   `--weather` and `--weather-place`, and the broker's
-  `--mqtt-enabled`, `--mqtt-host` and `--mqtt-port`; `--show` prints what the
+  `--mqtt-enabled`, `--mqtt-host`, `--mqtt-port` and `--mqtt-audio-announce`;
+  `--show` prints what the
   device has, `--help` lists them all). It reads the preferences file off the
   device and only replaces the settings it was given, so the rest are left
   alone, including the ones it knows nothing about (the screen tab and the rest
@@ -188,6 +189,10 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   the announcement and put back afterwards unless someone changed it
   meanwhile. A `volume` that is missing or not a number from 0 to 100 plays at
   40% rather than dropping the announcement.
+  The MQTT tab's "Play audio announcements" switch (on by default) can turn
+  them off; it is read as each command arrives rather than kept in
+  `MqttSettings`, so switching it doesn't reconnect, and an announcement it
+  stops is dropped with a log line and nothing on screen.
   Announcements play one at a time, under a partial wake lock, so they work
   with the screen off. When the sound starts, `msg` (or "Audio announcement in
   progress" without one) is shown like a text announcement with no timeout,
@@ -222,12 +227,20 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   never published (no mmWave sensor), and occupancy is a guess from the screen
   (`Occupancy`), with a `source` field saying which. The slideshow runs in two
   places and they hand over in either order, so each reports itself by name and
-  `slideshow_active` is true while either is showing. The topic prefix and the client id default
+  `slideshow_active` is true while either is showing, and false while the
+  night rule has it covered in black. The topic prefix and the client id default
   to the device's own name (`device_name`, e.g. `portalgo/`), sanitised for
   topics: "astrodock" is the software, the unit is the Portal. Each device needs
   its own prefix, or they overwrite each other's retained topics.
-- `SystemSettingsFragment.kt`: the System tab. One item per thing the app needs
-  from the system, with its state and a button that opens the system dialog.
+- `SystemSettingsFragment.kt`: the System tab. At the top, a list of what is
+  missing and what doesn't work without it (each `Item`'s `missing`), then a
+  note to run `tools/setup-device.sh`, which grants all of it; "Everything is
+  set up" when nothing is. Below, one item per thing the app needs from the
+  system, with a tick once it's granted, and while it isn't, a button that
+  opens the system dialog. Granted items have no button, and nor do `adbOnly`
+  ones, whose system screen can't grant them: the secure settings grant
+  everywhere, and on a Portal (`Build.MANUFACTURER` "Facebook") the device
+  admin and notification access too.
   These intents must be started **for a result** (`systemDialog.launch`): the
   role dialog identifies the caller that way and closes immediately otherwise.
   That dialog is the only thing in the app that needs API 29 (`RoleManager`),
@@ -241,7 +254,9 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   and does nothing without it, which is why the System tab shows the two next
   to each other.
 - `ScreenAdminReceiver.kt` + `res/xml/device_admin.xml`: device admin with the
-  force-lock policy only, so the app can turn the screen off.
+  force-lock policy only, so the app can turn the screen off. On the Portal the
+  System tab's button doesn't work (see the platform notes), so
+  `tools/setup-device.sh` grants it with `dpm set-active-admin`.
 - `ScreenControl.kt`: the two bits of screen behaviour the app may control. It
   writes `sleep_timeout` (**half** the screen-off delay, because the Portal
   takes two rounds of it to switch the screen off; secure, needs the adb grant)
@@ -270,6 +285,10 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   in `onAttachedToWindow()` leaves the window focusable, and it then swallows
   every touch, so the screensaver can't be dismissed and the device looks
   frozen. It also ends the screensaver itself in `dispatchTouchEvent`.
+  `DreamService` doesn't pass changes to its window's attributes on to the
+  window manager once the window is up (an activity does), so
+  `onWindowAttributesChanged` does it; without that the night rule's backlight
+  override had no effect in the screensaver.
   A dream has **no AppCompat theme**, so `res/layout/slideshow.xml` may only use
   framework attributes (`?android:attr/...`). An AppCompat one like
   `?attr/selectableItemBackgroundBorderless` inflates fine in the activity but
@@ -441,16 +460,36 @@ if several share the name, or "latitude, longitude". Empty hides the panel.
 Changing any of it leaves the pictures alone. Under "Screen": how long
 after the Portal last saw someone the screen switches off (a slider, 0 leaves
 the system's value alone) and an opt-in "turn the screen off at night" with its hours
-(default 00:00 to 06:00, off).
+(default 00:00 to 06:00, off). Without the device admin ("Turn the screen
+off" in the System tab) the night rule can't do anything, so its switch and
+hours are greyed out and the reason is shown in red; this is checked every
+time the tab is resumed, so granting it enables them. The red doesn't show on
+a Portal set up by `tools/setup-device.sh`, whose high contrast text draws
+every string black or white.
 
-**Night screen off**. While the slideshow is on screen it checks every 30s (the
-first check 20s after it appears, so someone walking in has time to touch it)
-whether the hour is inside the night window. If it is, and nothing was touched
-in the last 5 minutes, it calls `lockNow()`. The Portal's presence detection
-wakes the screen again when it sees someone, and the next check switches it off
-again, so the screen stays dark unless the user actually touches it. Changing
-these settings doesn't disturb the pictures: only the server and sampling
-settings reset the slideshow.
+**Night screen off** (`SlideshowController.checkNight`). The night rule applies
+while the hour is inside the night window and nothing has touched the slideshow
+in the last 5 minutes. It has two halves, because the Portal's presence
+detection wakes the screen about every 30s while its camera sees someone, and
+nothing an app can reach stops that:
+- **Dark**: the slideshow is covered in black (`night_cover`) with the window's
+  backlight override at 1/255, the panel's lowest (dim, not off), and the timer
+  stops moving pictures. MQTT reports it as `slideshow_active` false. This is
+  decided the moment a slideshow appears, before it reports anything, so a
+  screen the Portal has just woken never shows a picture and never reports a
+  moment of `true`. A touch on the cover
+  brings the pictures back; in the screensaver a touch wakes to the home
+  screen, which then isn't dark because of that touch.
+- **Off**: `lockNow()`, from the check that runs every 30s (the first 20s after
+  the slideshow appears). It isn't repeated for 10 minutes
+  (`NIGHT_RELOCK_MILLIS`, timed from `SlideshowState.lastNightLockAt`, which
+  survives the handover to a new screensaver): if the Portal wakes the screen
+  in that time, someone is in view and it stays black and dim. With nobody in
+  view the screen stays off. Locking again on every wake, as the first version
+  did, made the pictures blink on and off all night.
+Both need the device admin: without it the rule does nothing, matching the
+greyed out setting. Changing these settings doesn't disturb the pictures: only
+the server and sampling settings reset the slideshow.
 
 ## Portal platform notes (measured on the device, 2026-09-17)
 
@@ -569,11 +608,28 @@ settings reset the slideshow.
   `android.settings.SETTINGS` opens the Portal's own settings app
   (`com.facebook.alohaapps.settings`), which has no screen for this. So
   `tools/setup-device.sh` grants it over adb, like the secure settings.
+- **The system's device admin dialog refuses the app**: it says "Device
+  management policies are not supported" and activates nothing, although the
+  device has `android.software.device_admin` and
+  `adb shell dpm set-active-admin com.nicobrailo.astrodock/.ScreenAdminReceiver`
+  works (measured 2026-09-21). So `tools/setup-device.sh` grants it over adb,
+  like notification access. `tools/force-uninstall.sh` exists because an
+  active admin blocks `adb uninstall`, and reinstalling that way drops the
+  grant, so run the setup script again afterwards.
+- **Presence wakes a screen that `lockNow()` switched off.** Measured
+  2026-09-21 with someone in view: every lock was followed 8-14s later by
+  `Waking up from Dozing ... Full_Wakeup_PresenceManager`, on the camera's 30s
+  beat, and the screensaver started again. A window's `screenBrightness` of
+  1/255 gives `mActualBacklight=1` (`dumpsys display`), which is as dark as the
+  screen goes while it is on. After a lock the system also starts the
+  screensaver while the screen is still off, so the one the Portal wakes up to
+  is already running.
 - `tools/setup-device.sh` takes no arguments: it applies everything an app can't
   set for itself (home screen, screensaver, bug pill, app verifier, the theme
-  that hides the install dialog, notification access) and prints the result.
-  Its header lists the commands to undo each one. Everything else is granted
-  from the System tab.
+  that hides the install dialog, notification access, the device admin, and
+  the app-ops behind the System tab's other permissions: `WRITE_SETTINGS`,
+  `SYSTEM_ALERT_WINDOW`, `REQUEST_INSTALL_PACKAGES`) and prints the result.
+  Its header lists the commands to undo each one. Nothing else is needed.
 - `sleep_timeout` does not stick: it was back at the Portal's 1200000 twice
   after the device dreamt and woke again, so something on the Portal resets it.
   Don't rely on it; to control when the screen goes off, use the device admin

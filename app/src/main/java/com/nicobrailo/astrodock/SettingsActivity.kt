@@ -2,12 +2,16 @@ package com.nicobrailo.astrodock
 
 import android.os.Bundle
 import android.text.InputType
+import android.text.SpannableString
+import android.text.style.ForegroundColorSpan
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceFragmentCompat
+import androidx.preference.SwitchPreferenceCompat
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayout
@@ -78,6 +82,29 @@ class SettingsActivity : AppCompatActivity() {
             numberPreference(Settings.KEY_NIGHT_START_HOUR, Settings.HOUR_RANGE)
             numberPreference(Settings.KEY_NIGHT_END_HOUR, Settings.HOUR_RANGE)
             placePreference()
+        }
+
+        // The night rule can only turn the screen off with the device admin,
+        // and without it would do nothing and say nothing, so it is greyed out
+        // (its hours with it, through the dependency) and says why. Checked on
+        // every resume, since the grant is made in the System tab and the
+        // system's dialog, and both bring this tab back.
+        override fun onResume() {
+            super.onResume()
+            findPreference<SwitchPreferenceCompat>(Settings.KEY_NIGHT_SCREEN_OFF)?.apply {
+                val allowed = ScreenControl.canTurnScreenOff(requireContext())
+                isEnabled = allowed
+                summary = if (allowed) {
+                    getString(R.string.settings_night_screen_off_hint)
+                } else {
+                    // A span, because the summary's own colour greys out with
+                    // the rest of the disabled item
+                    SpannableString(getString(R.string.settings_night_screen_off_no_admin)).apply {
+                        val red = ContextCompat.getColor(requireContext(), R.color.error_text)
+                        setSpan(ForegroundColorSpan(red), 0, length, 0)
+                    }
+                }
+            }
         }
 
         // Shows a numeric keyboard and rejects values outside range. The

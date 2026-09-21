@@ -41,9 +41,18 @@
 
     <string name="settings_tab_slideshow">Slideshow</string>
     <string name="settings_tab_system">System</string>
-    <string name="system_granted">Set up</string>
-    <string name="system_missing">Not set up</string>
-    <string name="system_all_done">Everything below is set up.</string>
+    <string name="system_granted">✓ Set up</string>
+    <string name="system_missing">✗ Not set up</string>
+    <string name="system_all_done">✓ Everything is set up.</string>
+    <string name="system_setup_note">To grant everything at once, connect the device to a computer with adb and run tools/setup-device.sh from the AstroDock sources. Items below with a button can also be set up here.</string>
+    <string name="system_home_missing">Not the home screen: Home opens the Portal\'s own launcher</string>
+    <string name="system_dream_missing">Not the screensaver: the Portal shows its own when idle</string>
+    <string name="system_admin_missing">Missing power permission: the screen can\'t be turned off at night</string>
+    <string name="system_write_settings_missing">Missing system settings permission: the screensaver delay can\'t be changed</string>
+    <string name="system_sleep_timeout_missing">Missing secure settings permission: the screen off delay and high contrast text can\'t be changed</string>
+    <string name="system_overlay_missing">Missing overlay permission: no home button over apps like WhatsApp</string>
+    <string name="system_media_missing">Missing notification access: no media controls on the slideshow</string>
+    <string name="system_install_missing">Missing install permission: the Apps tab can\'t install or update apps</string>
 
     <string name="system_home_title">Home screen</string>
     <string name="system_home_description">Show the slideshow instead of the Portal home screen.</string>
@@ -54,7 +63,7 @@
     <string name="system_dream_button">Open screensaver settings</string>
 
     <string name="system_admin_title">Turn the screen off</string>
-    <string name="system_admin_description">Lets the app switch the screen off itself, instead of waiting for the system timeout.</string>
+    <string name="system_admin_description">Lets the app switch the screen off itself, for the night hours in the Slideshow tab. On a Portal the system\'s dialog refuses it, so only adb can grant it there.</string>
     <string name="system_admin_button">Activate</string>
     <string name="system_admin_explanation">AstroDock uses this only to turn the screen off.</string>
 
@@ -86,7 +95,7 @@
     <string name="media_previous">Previous</string>
 
     <string name="system_media_title">Media controls</string>
-    <string name="system_media_description">Lets the slideshow show and control what other apps are playing, e.g. Jellyfin. Turn AstroDock on in the list that opens. The Portal closes that list again as it appears, and then adb is the only way:\n\nadb shell cmd notification allow_listener com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService</string>
+    <string name="system_media_description">Lets the slideshow show and control what other apps are playing, e.g. Jellyfin. Turn AstroDock on in the list that opens. On a Portal that list closes again as it appears, so only adb can grant it there.</string>
     <string name="system_media_button">Open notification access</string>
 
     <string name="settings_category_weather">Weather</string>
@@ -103,7 +112,8 @@
     <string name="settings_screen_off_minutes">Turn the screen off after (minutes)</string>
     <string name="settings_screen_off_minutes_hint">Minutes after the Portal last saw someone in the room before the screen switches off. 0 leaves it to the Portal, which is the steadier choice: its own delay is about 20 minutes, and shorter ones make the screen blink off while somebody is in the room. Needs the screen off delay in the System tab.</string>
     <string name="settings_night_screen_off">Turn the screen off at night</string>
-    <string name="settings_night_screen_off_hint">Switches the screen off during the hours below, even when someone is in the room. A touch keeps it on for a few minutes. Needs \"Turn the screen off\" in the System tab.</string>
+    <string name="settings_night_screen_off_hint">Keeps the screen dark during the hours below: switched off, or black and dimmed while the Portal keeps waking it because someone is in the room. A touch brings the pictures back for a few minutes. Needs \"Turn the screen off\" in the System tab.</string>
+    <string name="settings_night_screen_off_no_admin">Not available: AstroDock has no permission to turn the screen off. Grant \"Turn the screen off\" in the System tab, or on a Portal, run tools/setup-device.sh.</string>
     <string name="settings_night_start">Night starts at (hour)</string>
     <string name="settings_night_end">Night ends at (hour)</string>
     <string name="settings_night_hour_hint">Hour of the day, 0 to 23</string>
@@ -155,4 +165,7 @@
     <string name="mqtt_client_id">Client ID</string>
     <string name="mqtt_client_id_hint">How this device identifies itself to the broker. Empty means this device\'s name.</string>
     <string name="mqtt_topics">Published topics</string>
+    <string name="mqtt_category_commands">Commands</string>
+    <string name="mqtt_audio_announcements">Play audio announcements</string>
+    <string name="mqtt_audio_announcements_summary">Plays the sound files the broker sends with announce_audio. When off, they are ignored.</string>
 </resources>

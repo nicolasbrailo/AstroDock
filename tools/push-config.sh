@@ -32,9 +32,6 @@ Usage: tools/push-config.sh [OPTION]...
   --album-to-year YEAR     Only albums with pictures up to YEAR (0: no limit)
   Pass '' to any of the four to drop that part of the filter.
 
-  Where the device reports its state (see mqtt/MqttSettings.kt). The rest of
-  the MQTT settings are only on the device's screen:
-
   Current temperature and sky over the clock, from Open-Meteo (no account
   needed, so there is only somewhere to report on):
 
@@ -44,9 +41,15 @@ Usage: tools/push-config.sh [OPTION]...
                            'Springfield, Illinois'. Or coordinates: '52.37, 4.89'.
                            The Slideshow tab shows what it was found as.
 
+  Where the device reports its state (see mqtt/MqttSettings.kt). The rest of
+  the MQTT settings are only on the device's screen:
+
   --mqtt-enabled BOOL      Report to the broker at all: true or false
   --mqtt-host HOST         Broker's address, e.g. 192.168.1.10
   --mqtt-port PORT         Broker's port (default 1883)
+  --mqtt-audio-announce BOOL
+                           Play the sound files announce_audio sends: true or
+                           false (default true)
 
   --show                   Print the settings on the device and exit
   --reset                  Replace every setting, instead of editing what's there
@@ -105,6 +108,7 @@ while [[ $# -gt 0 ]]; do
     --mqtt-enabled) boolean "$2" "$1"; set_pref mqtt_enabled "$2" bool; shift 2 ;;
     --mqtt-host) set_pref mqtt_host "$2"; shift 2 ;;
     --mqtt-port) number "$2" "$1" 1 65535; set_pref mqtt_port "$2"; shift 2 ;;
+    --mqtt-audio-announce) boolean "$2" "$1"; set_pref mqtt_audio_announcements "$2" bool; shift 2 ;;
     --show) show=1; shift ;;
     --reset) reset=1; shift ;;
     -h | --help) usage; exit 0 ;;

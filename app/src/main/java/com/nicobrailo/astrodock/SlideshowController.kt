@@ -12,6 +12,8 @@ import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
+import android.view.Window
+import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.widget.ImageButton
 import android.widget.ImageView
@@ -64,8 +66,8 @@ import kotlin.math.sign
 // - The bottom right corner shows what another app is playing, with controls,
 //   so the device can play music while the pictures keep going (see
 //   NowPlaying). It needs notification access, and stays hidden without it.
-// - If the user asked for it, the screen is switched off during the night
-//   hours (see ScreenControl), a little after they last touched it.
+// - If the user asked for it, the screen goes dark during the night hours
+//   (see checkNight), a little after they last touched it.
 //
 // The picture on screen (cur) and its neighbours (prev, next) each have their
 // own view, kept one screen width to either side, so a neighbour can slide in
@@ -77,6 +79,8 @@ import kotlin.math.sign
 // it's done.
 class SlideshowController(
     private val context: Context,
+    // The host's window, whose backlight is turned down during the night hours
+    private val window: Window,
     private val root: View,
     private val scope: CoroutineScope,
     // The screensaver isn't interactive: any touch wakes the device instead
@@ -111,6 +115,12 @@ class SlideshowController(
     private var pickJob: Job? = null
     private var timerJob: Job? = null
     private var nightJob: Job? = null
+    // Covers the pictures at night, while the screen is on but shouldn't be
+    private val nightCover: View = root.findViewById(R.id.night_cover)
+    private var dark = false
+    // Between start() and stop(), which is when going dark and back is news for
+    // the broker; the two of them report the rest
+    private var started = false
 
     // What another app is playing. Only watched while the slideshow is visible.
     private val nowPlayingPanel: View = root.findViewById(R.id.now_playing)
@@ -171,6 +181,15 @@ class SlideshowController(
             }
             clock.setOnClickListener { toggleDebug() }
             setUpTouch()
+            // A touch in the dark only brings the pictures back, rather than
+            // also opening the app list the user can't see yet
+            nightCover.setOnTouchListener { _, event ->
+                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+                    state.noteTouch()
+                    setDark(false)
+                }
+                true
+            }
         }
     }
 
@@ -184,9 +203,14 @@ class SlideshowController(
             setOffset(0f)
         }
 
+        // Before anything is reported, so a screen the Portal wakes at night
+        // is reported as the dark screen it is, without a moment of "active"
+        startNightWatch()
+
         // Settings may have been edited in the MQTT tab meanwhile
         reporter.applySettings()
-        reporter.onSlideshowVisible(reporterSource, true)
+        reporter.onSlideshowVisible(reporterSource, !dark)
+        started = true
         // Commands go to whichever slideshow is on screen
         reporter.setCommandListener(onCommand)
         // The screensaver is what runs all night, with nobody looking, so it
@@ -203,7 +227,6 @@ class SlideshowController(
             }
         }
 
-        startNightWatch()
         startWeather()
 
         if (!state.isConfigured) {
@@ -220,10 +243,12 @@ class SlideshowController(
     // Called when it isn't visible any more. The pictures are kept, so coming
     // back shows the same one.
     fun stop() {
+        started = false
         reporter.onSlideshowVisible(reporterSource, false)
         reporter.clearCommandListener(onCommand)
         reporter.clearAlertListener(onAlert)
         nightJob?.cancel()
+        setDark(false)
         nowPlayingJob?.cancel()
         nowPlaying.stop()
         weatherJob?.cancel()
@@ -580,36 +605,67 @@ class SlideshowController(
 
     // ---- Screen ------------------------------------------------------------
 
-    // Switches the screen off during the night hours. The Portal's presence
-    // detection wakes the screen again when it sees someone, and the next check
-    // switches it off again, so the screen stays dark at night unless the user
-    // actually touches it.
+    // Keeps the screen dark during the night hours. Switching it off isn't
+    // enough on its own: while the Portal's camera sees someone, its presence
+    // detection wakes the screen about every 30s and starts the screensaver,
+    // and nothing an app can reach stops that. Locking again on every wake made
+    // the pictures blink on and off all night. So at night the slideshow is
+    // covered in black with the backlight at its lowest, from the moment it
+    // appears, and the screen is only switched off when that is likely to
+    // stick: the first time, and then again once NIGHT_RELOCK_MILLIS have
+    // passed, by when whoever woke it may have gone. If they haven't, the wake
+    // that follows is from black to black.
     private fun startNightWatch() {
         nightJob?.cancel()
+        // Straight away, so a screen the Portal has just woken never shows a
+        // picture; switching it off can wait for the first check
+        checkNight(mayLock = false)
         nightJob = scope.launch {
             // Not straight away: someone who just walked in should have time to
-            // touch the screen before it goes dark again
+            // touch the screen before it goes off again
             delay(NIGHT_FIRST_CHECK_MILLIS)
             while (true) {
                 // The Portal resets the screen-off delay on its own, so it's
                 // written again rather than only once at startup
                 state.currentSettings?.let { ScreenControl.applyScreenOffDelay(context, it) }
-                checkNight()
+                checkNight(mayLock = true)
                 delay(NIGHT_CHECK_MILLIS)
             }
         }
     }
 
-    private fun checkNight() {
-        val settings = state.currentSettings ?: return
-        if (!settings.nightScreenOff) return
-        if (!ScreenControl.isNight(LocalTime.now().hour, settings.nightStartHour, settings.nightEndHour)) return
-        // Someone is using the device: leave it alone for a while
-        if (SystemClock.elapsedRealtime() - state.lastTouchAt < NIGHT_TOUCH_GRACE_MILLIS) return
-        if (!ScreenControl.canTurnScreenOff(context)) return
+    private fun checkNight(mayLock: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        val settings = state.currentSettings
+        val night = settings != null && settings.nightScreenOff &&
+            ScreenControl.isNight(LocalTime.now().hour, settings.nightStartHour, settings.nightEndHour) &&
+            // Someone is using the device: leave it alone for a while
+            now - state.lastTouchAt >= NIGHT_TOUCH_GRACE_MILLIS &&
+            // The settings screen greys the rule out without the admin, so it
+            // does nothing at all rather than half of it
+            ScreenControl.canTurnScreenOff(context)
+        setDark(night)
+        if (!night || !mayLock) return
 
+        val lockedAt = state.lastNightLockAt
+        if (lockedAt != null && now - lockedAt < NIGHT_RELOCK_MILLIS) return
+        state.lastNightLockAt = now
         Log.i(TAG, "Night hours: turning the screen off")
         ScreenControl.turnScreenOff(context)
+    }
+
+    // Covers the pictures in black and turns the backlight down to its lowest
+    // level, which on the Portal is dim but not off
+    private fun setDark(on: Boolean) {
+        if (on == dark) return
+        dark = on
+        Log.i(TAG, if (on) "Night hours: dark" else "Night hours: showing pictures")
+        nightCover.visibility = if (on) View.VISIBLE else View.GONE
+        // Nobody can see a slideshow under the cover, so it isn't active
+        if (started) reporter.onSlideshowVisible(reporterSource, !on)
+        window.attributes = window.attributes.apply {
+            screenBrightness = if (on) NIGHT_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+        }
     }
 
     // ---- Timer -------------------------------------------------------------
@@ -629,6 +685,8 @@ class SlideshowController(
     }
 
     private fun onTimer() {
+        // Nobody would see it, and it would only fetch pictures
+        if (dark) return
         if (dragging || pageAnimator != null) return
         if (next.ready) {
             animateOffset(-root.width.toFloat()) { pageForward() }
@@ -779,6 +837,11 @@ class SlideshowController(
         const val NIGHT_FIRST_CHECK_MILLIS = 20_000L
         // How long a touch keeps the screen on during the night hours
         const val NIGHT_TOUCH_GRACE_MILLIS = 5 * 60 * 1000L
+        // How long after switching the screen off at night it is left on if
+        // the Portal wakes it again, which means its camera still sees someone
+        const val NIGHT_RELOCK_MILLIS = 10 * 60 * 1000L
+        // The lowest backlight level there is (1 of 255)
+        const val NIGHT_BRIGHTNESS = 1f / 255
         // How much harder it is to drag when there is no picture to move to
         const val OVERSCROLL_RESISTANCE = 3f
     }
