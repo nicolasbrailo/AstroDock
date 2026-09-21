@@ -1,6 +1,7 @@
 package com.nicobrailo.astrodock.weather
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.Instant
 import java.time.ZoneId
@@ -81,5 +82,70 @@ class MillisToNextHourTest {
         val kathmandu = ZoneId.of("Asia/Kathmandu")
         assertEquals(60 * 60_000L, at("2026-09-20T15:15:00Z", kathmandu))
         assertEquals(15 * 60_000L, at("2026-09-20T15:00:00Z", kathmandu))
+    }
+}
+
+class ParseCoordinatesTest {
+    @Test
+    fun `latitude and longitude, with or without spaces`() {
+        assertEquals(Place(52.37, 4.89, "52.37, 4.89"), parseCoordinates("52.37, 4.89"))
+        assertEquals(Place(52.37, 4.89, "52.37, 4.89"), parseCoordinates("52.37,4.89"))
+        assertEquals(Place(52.37, 4.89, "52.37, 4.89"), parseCoordinates("  52.37 ,  4.89 "))
+    }
+
+    @Test
+    fun `south and west are negative`() {
+        assertEquals(Place(-54.8, -68.3, "-54.8, -68.3"), parseCoordinates("-54.8, -68.3"))
+    }
+
+    @Test
+    fun `the ends of the ranges are allowed`() {
+        assertEquals(90.0, parseCoordinates("90, 180")?.latitude)
+        assertEquals(-180.0, parseCoordinates("-90, -180")?.longitude)
+    }
+
+    @Test
+    fun `out of range is a name, not a place`() {
+        assertNull(parseCoordinates("90.1, 0"))
+        assertNull(parseCoordinates("0, 180.1"))
+        assertNull(parseCoordinates("NaN, NaN"))
+    }
+
+    @Test
+    fun `a place name with a comma is left for the geocoder`() {
+        assertNull(parseCoordinates("Paris, US"))
+        assertNull(parseCoordinates("Springfield, Illinois"))
+        assertNull(parseCoordinates("52.37, Amsterdam"))
+    }
+
+    @Test
+    fun `anything but exactly two numbers is a name`() {
+        assertNull(parseCoordinates("Amsterdam"))
+        assertNull(parseCoordinates("52.37"))
+        assertNull(parseCoordinates("52.37, 4.89, 11"))
+        assertNull(parseCoordinates(""))
+    }
+}
+
+class PlaceLabelTest {
+    @Test
+    fun `name, region and country`() {
+        assertEquals(
+            "Springfield, Illinois, United States",
+            placeLabel("Springfield", "Illinois", "United States"),
+        )
+    }
+
+    @Test
+    fun `missing parts are left out`() {
+        assertEquals("Amsterdam, Netherlands", placeLabel("Amsterdam", "", "Netherlands"))
+        assertEquals("Amsterdam", placeLabel("Amsterdam", " ", ""))
+    }
+
+    @Test
+    fun `a city that is its own region is named once`() {
+        assertEquals("Berlin, Germany", placeLabel("Berlin", "Berlin", "Germany"))
+        // A city that is its own country, with no region between them
+        assertEquals("Luxembourg", placeLabel("Luxembourg", "", "Luxembourg"))
     }
 }

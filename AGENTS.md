@@ -22,7 +22,7 @@ it up to date when the design changes.
   (`--server-url`, `--api-key`, `--max-pictures`, `--percent`,
   `--slide-seconds`, the album filter's `--album-include`,
   `--album-exclude`, `--album-from-year`, `--album-to-year`, the weather's
-  `--weather`, `--weather-lat` and `--weather-lon`, and the broker's
+  `--weather` and `--weather-place`, and the broker's
   `--mqtt-enabled`, `--mqtt-host` and `--mqtt-port`; `--show` prints what the
   device has, `--help` lists them all). It reads the preferences file off the
   device and only replaces the settings it was given, so the rest are left
@@ -139,9 +139,21 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   with "There was a problem while parsing the package". Progress is reported
   from the download's own thread, so the fragment hops to the main thread
   before it touches the view.
-- `weather/Weather.kt` + `weather/WeatherClient.kt`: the current temperature
-  and sky, over the clock. Open-Meteo (https://open-meteo.com) needs no account
-  and no API key, so the only settings are the toggle and where the device is.
+- `weather/Weather.kt`, `weather/WeatherClient.kt`, `weather/PlaceCache.kt`:
+  the current temperature and sky, over the clock. Open-Meteo
+  (https://open-meteo.com) needs no account and no API key, and nor does its
+  geocoder, so the only settings are the toggle and a place name. The name is
+  looked up once and kept in `PlaceCache` (its own preferences file, since it is
+  derived from a setting rather than being one), and asked again only when the
+  name changes, so the weather carries on while the geocoder is down. Text that
+  is two numbers in range (`parseCoordinates`) is used as coordinates without
+  asking anyone, for a house outside any town. The geocoder answers a bare
+  ambiguous name with the most populous match (a plain "Springfield" is the one
+  in Missouri) and understands "Springfield, Illinois" or "Paris, US", but not
+  the same without the comma, which finds nothing; a name it doesn't know gets
+  a reply with no `results` at all. That is why the Slideshow tab's summary is
+  what the name was found as (`placeLabel`), looked up every time the screen
+  opens, rather than what was typed.
   `conditionOf` folds the WMO 4677 code the server reports onto the seven
   `res/drawable/ic_weather_*.xml` icons, since hail, freezing drizzle and the
   rest of that vocabulary don't survive being drawn at 34dp; an unknown code is
@@ -348,11 +360,14 @@ documents the API). Keep the two behaving the same.
   slot fetches its picture's metadata alongside the image, so the text is ready
   when the picture slides in; if the metadata can't be fetched, the line is
   hidden.
-- Above the clock, when the Slideshow tab turns it on and a latitude and
-  longitude are set, is the current temperature and an icon for the sky. It is
-  fetched when the slideshow appears and then on every hour. Nothing on screen
-  depends on it, so a fetch that fails only goes to the log and leaves the panel
-  as it was, or hidden: the pictures are the point. The screensaver shows it
+- Above the clock, when the Slideshow tab turns it on and a place is set, is
+  the current temperature and an icon for the sky. It is fetched when the
+  slideshow appears and then on every hour, and the place is resolved on each
+  round too, which costs nothing once it's cached but means a geocoder that was
+  down at the start is tried again. Nothing on screen depends on it, so a fetch
+  that fails only goes to the log and leaves the panel as it was, or hidden: the
+  pictures are the point. A place the geocoder doesn't know hides the panel,
+  and the settings screen says so under the field. The screensaver shows it
   too.
 - The bottom right corner shows what another app is playing (title, artist and
   album, artwork when the app provides one) with previous, play/pause and next.
@@ -403,8 +418,8 @@ server gives no dates for is left out as soon as a year is set). All four are
 empty by default, which shows every album. Changing any of them restarts the
 slideshow, since whatever is on screen may come from an album that is now
 filtered out. Under "Weather": whether to show it at all and the
-latitude and longitude to show it for (decimal degrees, negative for south and
-west; empty or 0,0 hides the panel, so there is no number meaning "nowhere").
+place to show it for: a town or city, with a comma and the region or country
+if several share the name, or "latitude, longitude". Empty hides the panel.
 Changing any of it leaves the pictures alone. Under "Screen": how long
 after the Portal last saw someone the screen switches off (a slider, 0 leaves
 the system's value alone) and an opt-in "turn the screen off at night" with its hours

@@ -39,8 +39,10 @@ Usage: tools/push-config.sh [OPTION]...
   needed, so there is only somewhere to report on):
 
   --weather BOOL           Show the weather at all: true or false
-  --weather-lat DEGREES    Degrees north, e.g. 52.37 (negative is south)
-  --weather-lon DEGREES    Degrees east, e.g. 4.89 (negative is west)
+  --weather-place PLACE    A town or city, e.g. Amsterdam. If several share the
+                           name, add a comma and the region or country:
+                           'Springfield, Illinois'. Or coordinates: '52.37, 4.89'.
+                           The Slideshow tab shows what it was found as.
 
   --mqtt-enabled BOOL      Report to the broker at all: true or false
   --mqtt-host HOST         Broker's address, e.g. 192.168.1.10
@@ -78,21 +80,6 @@ number() {
   exit 1
 }
 
-# A coordinate, which unlike every other number here is fractional and may be
-# negative, so bash's integer comparison is no use and awk does the range check.
-degrees() {
-  local value=$1 name=$2 low=$3 high=$4
-  # Empty clears it, as it does for the album filter, which turns the panel off
-  # without having to find a number that means "nowhere"
-  [[ -z $value ]] && return 0
-  if [[ $value =~ ^-?[0-9]+(\.[0-9]+)?$ ]] &&
-    awk -v v="$value" -v l="$low" -v h="$high" 'BEGIN { exit !(v >= l && v <= h) }'; then
-    return 0
-  fi
-  echo "$name must be a number between $low and $high, not \"$value\"" >&2
-  exit 1
-}
-
 show=0
 reset=0
 while [[ $# -gt 0 ]]; do
@@ -114,8 +101,7 @@ while [[ $# -gt 0 ]]; do
     --album-from-year) number "$2" "$1" 0 9999; set_pref album_from_year "$2"; shift 2 ;;
     --album-to-year) number "$2" "$1" 0 9999; set_pref album_to_year "$2"; shift 2 ;;
     --weather) boolean "$2" "$1"; set_pref weather_enabled "$2" bool; shift 2 ;;
-    --weather-lat) degrees "$2" "$1" -90 90; set_pref weather_latitude "$2"; shift 2 ;;
-    --weather-lon) degrees "$2" "$1" -180 180; set_pref weather_longitude "$2"; shift 2 ;;
+    --weather-place) set_pref weather_place "$2"; shift 2 ;;
     --mqtt-enabled) boolean "$2" "$1"; set_pref mqtt_enabled "$2" bool; shift 2 ;;
     --mqtt-host) set_pref mqtt_host "$2"; shift 2 ;;
     --mqtt-port) number "$2" "$1" 1 65535; set_pref mqtt_port "$2"; shift 2 ;;

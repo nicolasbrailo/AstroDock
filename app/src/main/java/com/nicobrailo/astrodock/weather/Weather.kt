@@ -47,6 +47,41 @@ fun conditionOf(code: Int): WeatherCondition = when (code) {
     else -> WeatherCondition.CLOUDY
 }
 
+// Somewhere to report the weather for, and what to call it back to the user.
+data class Place(
+    val latitude: Double,
+    val longitude: Double,
+    val label: String,
+)
+
+val LATITUDE_RANGE = -90.0..90.0
+val LONGITUDE_RANGE = -180.0..180.0
+
+// Coordinates typed into the place field ("52.37, 4.89"), for somewhere the
+// geocoder has no name for, like a house outside any town. Anything else is a
+// name to look up. "Paris, US" has a comma too, which is why both halves have
+// to be numbers, and in range, before this takes it.
+fun parseCoordinates(text: String): Place? {
+    val parts = text.split(',').map { it.trim() }
+    if (parts.size != 2) return null
+    val latitude = parts[0].toDoubleOrNull() ?: return null
+    val longitude = parts[1].toDoubleOrNull() ?: return null
+    // NaN fails these too, so "NaN, NaN" is looked up as a name, and not found
+    if (latitude !in LATITUDE_RANGE || longitude !in LONGITUDE_RANGE) return null
+    return Place(latitude, longitude, "${parts[0]}, ${parts[1]}")
+}
+
+// "Springfield, Illinois, United States": enough to tell apart the places
+// that share a name, which is what the settings screen shows it for. A part
+// that repeats the one before it is dropped, so a city that is its own region
+// (Berlin, Berlin, Germany) is only named once.
+fun placeLabel(name: String, region: String, country: String): String =
+    listOf(name, region, country)
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .fold(listOf<String>()) { kept, part -> if (kept.lastOrNull() == part) kept else kept + part }
+        .joinToString(", ")
+
 // How long until the next full hour, so the weather is refreshed on the hour
 // rather than an hour after the slideshow happened to start. Done in the local
 // zone rather than on the epoch, because a few zones are offset by half an hour

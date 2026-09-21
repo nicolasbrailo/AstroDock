@@ -5,12 +5,18 @@ import android.text.InputType
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
 import androidx.preference.PreferenceFragmentCompat
 import androidx.viewpager2.adapter.FragmentStateAdapter
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.material.tabs.TabLayout
 import com.google.android.material.tabs.TabLayoutMediator
+import com.nicobrailo.astrodock.weather.PlaceCache
+import com.nicobrailo.astrodock.weather.WeatherClient
+import com.nicobrailo.astrodock.weather.WeatherException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 // Three tabs: the slideshow settings (Settings.kt), what the app needs from the
 // system (SystemSettingsFragment), and apps to install (InstallAppsFragment).
@@ -71,8 +77,7 @@ class SettingsActivity : AppCompatActivity() {
             numberPreference(Settings.KEY_ALBUM_TO_YEAR, Settings.YEAR_RANGE)
             numberPreference(Settings.KEY_NIGHT_START_HOUR, Settings.HOUR_RANGE)
             numberPreference(Settings.KEY_NIGHT_END_HOUR, Settings.HOUR_RANGE)
-            degreesPreference(Settings.KEY_WEATHER_LATITUDE, Settings.LATITUDE_RANGE)
-            degreesPreference(Settings.KEY_WEATHER_LONGITUDE, Settings.LONGITUDE_RANGE)
+            placePreference()
         }
 
         // Shows a numeric keyboard and rejects values outside range. The
@@ -91,28 +96,46 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
 
-        // The same for a coordinate, which unlike every other number here is
-        // fractional and may be negative, so it needs the signed and decimal
-        // keyboard flags and its own check.
-        private fun degreesPreference(key: String, range: ClosedFloatingPointRange<Double>) {
-            val pref = findPreference<EditTextPreference>(key) ?: return
-            pref.setOnBindEditTextListener {
-                it.inputType = InputType.TYPE_CLASS_NUMBER or
-                    InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
-            }
-            pref.setOnPreferenceChangeListener { _, value ->
-                val text = (value as String).trim()
-                // Empty clears it, which turns the panel off without having to
-                // find a number that means "nowhere"
-                val ok = text.isEmpty() ||
-                    text.toDoubleOrNull()?.let { it in range } == true
-                if (!ok) {
-                    val msg = getString(
-                        R.string.settings_invalid_degrees, range.start, range.endInclusive
-                    )
-                    Toast.makeText(requireContext(), msg, Toast.LENGTH_SHORT).show()
+        // Says what the place was found as, rather than what was typed: a bare
+        // "Springfield" is taken to be the biggest one and a typo finds nothing
+        // at all, and otherwise the only sign of either would be the wrong
+        // weather, or none. It is looked up again every time
+        // the screen opens as well as when it changes, so a name pushed with
+        // push-config.sh gets checked too; one found before comes from the
+        // cache without the network. Every value is accepted, found or not:
+        // the geocoder being down is no reason to refuse a name.
+        private fun placePreference() {
+            val pref = findPreference<EditTextPreference>(Settings.KEY_WEATHER_PLACE) ?: return
+            val places = PlaceCache(requireContext())
+            val client = WeatherClient()
+            var lookup: Job? = null
+
+            fun describe(text: String) {
+                lookup?.cancel()
+                val name = text.trim()
+                if (name.isEmpty()) {
+                    pref.summary = getString(R.string.settings_weather_place_not_set)
+                    return
                 }
-                ok
+                places.known(name)?.let {
+                    pref.summary = it.label
+                    return
+                }
+                pref.summary = getString(R.string.settings_weather_place_looking_up, name)
+                lookup = lifecycleScope.launch {
+                    pref.summary = try {
+                        places.resolve(name, client)?.label
+                            ?: getString(R.string.settings_weather_place_not_found, name)
+                    } catch (e: WeatherException) {
+                        getString(R.string.settings_weather_place_failed, name)
+                    }
+                }
+            }
+
+            describe(pref.text.orEmpty())
+            pref.setOnPreferenceChangeListener { _, value ->
+                describe(value as String)
+                true
             }
         }
     }

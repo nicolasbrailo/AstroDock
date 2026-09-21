@@ -86,15 +86,15 @@
     <string name="system_media_description">Lets the slideshow show and control what other apps are playing, e.g. Jellyfin. Turn AstroDock on in the list that opens. The Portal closes that list again as it appears, and then adb is the only way:\n\nadb shell cmd notification allow_listener com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService</string>
     <string name="system_media_button">Open notification access</string>
 
-    <string name="settings_invalid_degrees">Enter a number between %1$.0f and %2$.0f</string>
-
     <string name="settings_category_weather">Weather</string>
     <string name="settings_weather_enabled">Show the weather</string>
     <string name="settings_weather_enabled_hint">Current temperature and sky over the clock, from Open-Meteo. Refreshed on the hour.</string>
-    <string name="settings_weather_latitude">Latitude</string>
-    <string name="settings_weather_latitude_hint">Degrees north, e.g. 52.37 for Amsterdam. Negative is south.</string>
-    <string name="settings_weather_longitude">Longitude</string>
-    <string name="settings_weather_longitude_hint">Degrees east, e.g. 4.89 for Amsterdam. Negative is west.</string>
+    <string name="settings_weather_place">Place</string>
+    <string name="settings_weather_place_hint">A town or city, e.g. Amsterdam. If several share the name, add a comma and the region or country: Springfield, Illinois. Somewhere with no name works as coordinates: 52.37, 4.89.</string>
+    <string name="settings_weather_place_not_set">Not set</string>
+    <string name="settings_weather_place_looking_up">Looking up %1$s…</string>
+    <string name="settings_weather_place_not_found">Found no place called %1$s</string>
+    <string name="settings_weather_place_failed">Couldn\'t look up %1$s just now. The slideshow will try again.</string>
 
     <string name="settings_category_screen">Screen</string>
     <string name="settings_screen_off_minutes">Turn the screen off after (minutes)</string>

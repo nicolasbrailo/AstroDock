@@ -33,6 +33,7 @@ import com.nicobrailo.astrodock.media.NowPlaying
 import androidx.preference.PreferenceManager
 import com.nicobrailo.astrodock.mqtt.Command
 import com.nicobrailo.astrodock.mqtt.StateReporter
+import com.nicobrailo.astrodock.weather.PlaceCache
 import com.nicobrailo.astrodock.weather.WeatherClient
 import com.nicobrailo.astrodock.weather.WeatherCondition
 import com.nicobrailo.astrodock.weather.WeatherException
@@ -125,6 +126,7 @@ class SlideshowController(
     private val weatherIcon: ImageView = root.findViewById(R.id.weather_icon)
     private val weatherTemperature: TextView = root.findViewById(R.id.weather_temperature)
     private val weatherClient = WeatherClient()
+    private val weatherPlaces = PlaceCache(context)
     private var weatherJob: Job? = null
 
     // Publishes what this device is doing to an MQTT broker, when that's set up
@@ -241,15 +243,26 @@ class SlideshowController(
         }
         weatherJob = scope.launch {
             while (true) {
-                updateWeather(settings.weatherLatitude, settings.weatherLongitude)
+                updateWeather(settings.weatherPlace)
                 delay(millisToNextHour(Instant.now(), ZoneId.systemDefault()))
             }
         }
     }
 
-    private suspend fun updateWeather(latitude: Double, longitude: Double) {
+    // The place is resolved on every round rather than once, which costs
+    // nothing once it is cached and means a geocoder that was down when the
+    // slideshow started is asked again an hour later, instead of never.
+    private suspend fun updateWeather(placeName: String) {
         val weather = try {
-            weatherClient.current(latitude, longitude)
+            val place = weatherPlaces.resolve(placeName, weatherClient)
+            if (place == null) {
+                // A name the geocoder doesn't know won't be found next hour
+                // either; the settings screen says so under the field
+                Log.w(TAG, "Weather: found no place called \"$placeName\"")
+                weatherPanel.visibility = View.GONE
+                return
+            }
+            weatherClient.current(place)
         } catch (e: WeatherException) {
             // Nothing on screen depends on this, and the pictures are the
             // point, so a broker-style alert would be more noise than it is
