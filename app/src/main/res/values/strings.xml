@@ -32,6 +32,9 @@
     <string name="mqtt_alert_no_answer">No answer from the MQTT broker at %1$s:%2$d\nSomething is listening there, but it isn\'t answering as a broker. Check the port.</string>
     <string name="mqtt_alert_lost">Lost the MQTT broker at %1$s:%2$d\n%3$s</string>
     <string name="mqtt_alert_subscribe">Connected to the MQTT broker, but can\'t subscribe to its commands\n%1$s</string>
+    <string name="announce_audio_default_msg">Audio announcement in progress</string>
+    <string name="announce_audio_fetch_failed">Received audio announce request but couldn\'t fetch \"%1$s\"\n%2$s</string>
+    <string name="announce_audio_play_failed">Received audio announce request but couldn\'t play \"%1$s\"\n%2$s</string>
     <string name="slideshow_error">%1$s\n\nRetrying soon. Tap the screen for settings.</string>
 
     <string name="app_list_title">Apps</string>

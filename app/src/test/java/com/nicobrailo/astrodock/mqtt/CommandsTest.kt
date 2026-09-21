@@ -19,6 +19,10 @@ class CommandsTest {
         )
         assertEquals(CommandKind.ANNOUNCE, Commands.kind("${prefix}cmd/ambience/announce", prefix))
         assertEquals(
+            CommandKind.ANNOUNCE_AUDIO,
+            Commands.kind("${prefix}cmd/ambience/announce_audio", prefix)
+        )
+        assertEquals(
             CommandKind.ALBUM_FILTER,
             Commands.kind("${prefix}cmd/ambience/set_album_filter", prefix)
         )

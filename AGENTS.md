@@ -179,7 +179,25 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   whichever slideshow is on screen, while `presence/force_on` (a wake lock, 30
   min) and `presence/force_off` (device admin lock, so it needs "Turn the screen
   off" from the System tab) are handled by the reporter itself, because they
-  must work with nothing on screen. The homeboard's renderer commands
+  must work with nothing on screen. So is `ambience/announce_audio`
+  (`{"uri":"http://.../x.mp3","msg":"Dinner is ready","volume":40}`, only
+  `uri` required), through
+  `audio/AnnouncementPlayer.kt`: it downloads the file in full (20 MB cap), then
+  plays it with transient audio focus, so music pauses rather than ducks. The
+  volume is a percentage of the device's media volume, set for the length of
+  the announcement and put back afterwards unless someone changed it
+  meanwhile. A `volume` that is missing or not a number from 0 to 100 plays at
+  40% rather than dropping the announcement.
+  Announcements play one at a time, under a partial wake lock, so they work
+  with the screen off. When the sound starts, `msg` (or "Audio announcement in
+  progress" without one) is shown like a text announcement with no timeout,
+  and when it ends, `EndAnnouncement` gives it 10 more seconds. That only
+  applies if it is still the announcement on screen, which the `owner` token
+  settles: anything announced in the meantime is newer and stays. One that can't be fetched or played says why as a 30s
+  text announcement, which only shows if a slideshow is on screen. Its own
+  playback makes `AudioManager.isMusicActive` true, which `NowPlaying` takes as
+  proof that a session claiming to play really is, so a stale session can show
+  in the media panel for as long as an announcement lasts. The homeboard's renderer commands
   (`set_svg_overlay`, `set_render_config`, `set_embed_qr`, `set_target_size`)
   are logged and dropped. Retained commands are ignored: they arrive again on
   every reconnect, and acting on them would replay an old command.

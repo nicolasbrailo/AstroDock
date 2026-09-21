@@ -10,7 +10,7 @@ A lightweight home screen and screensaver for the Facebook Portal Go.
 * **App Catalogue**: Built-in installer to download and update Portal-compatible apps.
 * **Smart Power**: Scheduled sleep/wake cycles and automated screen management.
 * **Media Controls**: "Now Playing" overlay for controlling background music and video apps.
-* **MQTT Remote**: Publishes device state (occupancy, current photo) and accepts remote commands (navigation, power, text announcements).
+* **MQTT Remote**: Publishes device state (occupancy, current photo) and accepts remote commands (navigation, power, text and audio announcements).
 
 ## Installing
 

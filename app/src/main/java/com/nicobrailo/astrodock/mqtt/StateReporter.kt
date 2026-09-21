@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.nicobrailo.astrodock.R
 import com.nicobrailo.astrodock.ScreenControl
 import com.nicobrailo.astrodock.Settings
+import com.nicobrailo.astrodock.audio.AnnouncementPlayer
 import com.nicobrailo.astrodock.immich.AlbumFilter
 import com.nicobrailo.astrodock.immich.ImmichPictureInfo
 import kotlinx.coroutines.CoroutineScope
@@ -83,6 +84,11 @@ class StateReporter private constructor(private val context: Context) {
     private var occupancyJob: Job? = null
     private var connectWatchdog: Job? = null
     private var watchingScreen = false
+    // A failure shows up the same way as a text announcement, on whichever
+    // slideshow is on screen
+    private val announcer = AnnouncementPlayer(context) { message ->
+        carryOut(Command.Announce(message, ANNOUNCE_ERROR_SECONDS))
+    }
 
     // The state we publish, kept so a reconnect can republish all of it.
     // The slideshow runs in two places (the home screen and the screensaver),
@@ -392,6 +398,22 @@ class StateReporter private constructor(private val context: Context) {
             // timeout 0 means it stays until something replaces it
             Command.Announce(json.optString("msg"), json.optInt("timeout", 0).coerceAtLeast(0))
         }
+        // {"uri":"http://10.0.0.20:8080/tts/x.mp3","msg":"Dinner is ready","volume":40}.
+        // Only the uri is required. A volume that is missing or makes no sense
+        // still plays, at the default: the message matters more than how loud
+        // it is.
+        CommandKind.ANNOUNCE_AUDIO -> {
+            val json = JSONObject(payload)
+            val uri = json.optString("uri").trim()
+            // optString would turn a JSON null into the text "null"
+            val message = if (json.isNull("msg")) null else json.optString("msg").trim().ifEmpty { null }
+            var volume = json.optInt("volume", -1)
+            if (volume !in 0..100) {
+                Log.w(TAG, "Bad announcement volume ${json.opt("volume")}, using $DEFAULT_ANNOUNCE_VOLUME%")
+                volume = DEFAULT_ANNOUNCE_VOLUME
+            }
+            if (uri.isEmpty()) null else Command.AnnounceAudio(uri, message, volume)
+        }
         // {"name":"holidays-*,Pets","exclude":"Screenshots","from_year":2019,"to_year":2021}
         // Every field is optional and the payload replaces the whole filter, so
         // "{}" shows every album again.
@@ -427,6 +449,21 @@ class StateReporter private constructor(private val context: Context) {
                     // Needs the device admin from the System tab
                     Log.w(TAG, "Can't turn the screen off: no device admin")
                 }
+            }
+            // Played whether or not anything is on screen: that is when it's
+            // most likely to matter
+            is Command.AnnounceAudio -> {
+                val message = command.message ?: context.getString(R.string.announce_audio_default_msg)
+                // Stays up while it plays, since nobody knows how long that
+                // is until it's over. Anything shown in the meantime wins,
+                // which the owner lets the end of it check.
+                val owner = Any()
+                announcer.play(
+                    command.uri,
+                    command.volumePercent,
+                    onStarted = { carryOut(Command.Announce(message, 0, owner)) },
+                    onFinished = { carryOut(Command.EndAnnouncement(owner, ANNOUNCE_AUDIO_LINGER_SECONDS)) },
+                )
             }
             else -> {
                 val listener = commandListener
@@ -552,6 +589,12 @@ class StateReporter private constructor(private val context: Context) {
         private const val OCCUPANCY_REFRESH_MILLIS = 60_000L
         // How long force_on holds the screen before the usual timeouts resume
         private const val FORCE_ON_MILLIS = 30 * 60 * 1000L
+        // How long an announcement that failed says so on screen
+        private const val ANNOUNCE_ERROR_SECONDS = 30
+        // For an audio announcement whose volume is missing or out of range
+        private const val DEFAULT_ANNOUNCE_VOLUME = 40
+        // How long an audio announcement's text stays after the audio ends
+        private const val ANNOUNCE_AUDIO_LINGER_SECONDS = 10
 
         @Volatile
         private var instance: StateReporter? = null

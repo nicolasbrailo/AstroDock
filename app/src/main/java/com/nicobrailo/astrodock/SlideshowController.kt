@@ -134,6 +134,9 @@ class SlideshowController(
     private val reporterSource = if (interactive) "home" else "screensaver"
     private val announcement: TextView = root.findViewById(R.id.announcement)
     private var announcementJob: Job? = null
+    // Who put up the announcement on screen, so they can take down their own
+    // without taking down whatever replaced it
+    private var announcementOwner: Any? = null
     private val onCommand: (Command) -> Unit = { carryOut(it) }
     // Whatever is wrong with the broker, in a corner of the home screen
     private val alert: TextView = root.findViewById(R.id.alert)
@@ -447,7 +450,8 @@ class SlideshowController(
             }
             is Command.TransitionSeconds -> setTransitionSeconds(command.seconds)
             is Command.SetAlbumFilter -> setAlbumFilter(command.filter)
-            is Command.Announce -> announce(command.message, command.timeoutSeconds)
+            is Command.Announce -> announce(command.message, command.timeoutSeconds, command.owner)
+            is Command.EndAnnouncement -> endAnnouncement(command.owner, command.afterSeconds)
             else -> Unit // Screen commands: the reporter deals with those
         }
     }
@@ -488,8 +492,9 @@ class SlideshowController(
 
     // Shows a message over the pictures. An empty message clears it, and a
     // timeout of 0 leaves it up until something else replaces it.
-    private fun announce(message: String, timeoutSeconds: Int) {
+    private fun announce(message: String, timeoutSeconds: Int, owner: Any? = null) {
         announcementJob?.cancel()
+        announcementOwner = owner
         if (message.isBlank()) {
             announcement.visibility = View.GONE
             return
@@ -501,6 +506,17 @@ class SlideshowController(
                 delay(timeoutSeconds * 1000L)
                 announcement.visibility = View.GONE
             }
+        }
+    }
+
+    // Starts the countdown on an announcement that was put up with none, if it
+    // is still on screen. Whatever was announced since is newer, so it stays.
+    private fun endAnnouncement(owner: Any, afterSeconds: Int) {
+        if (owner !== announcementOwner || announcement.visibility != View.VISIBLE) return
+        announcementJob?.cancel()
+        announcementJob = scope.launch {
+            delay(afterSeconds * 1000L)
+            announcement.visibility = View.GONE
         }
     }
 

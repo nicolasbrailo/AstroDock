@@ -16,8 +16,16 @@ sealed interface Command {
     object ForceOff : Command
     data class TransitionSeconds(val seconds: Int) : Command
     // timeoutSeconds 0 means it stays until something replaces it; an empty
-    // message clears whatever is on screen
-    data class Announce(val message: String, val timeoutSeconds: Int) : Command
+    // message clears whatever is on screen. owner is for whoever needs to end
+    // it later (see EndAnnouncement); plain announcements have none.
+    data class Announce(val message: String, val timeoutSeconds: Int, val owner: Any? = null) : Command
+    // Takes the announcement down afterSeconds from now, but only if it is
+    // still the one owner put up: anything shown since has taken its place
+    data class EndAnnouncement(val owner: Any, val afterSeconds: Int) : Command
+    // An audio file to fetch and play. volumePercent is the media volume to
+    // play it at, 0 to 100; message is the text shown while it plays, null
+    // for none given.
+    data class AnnounceAudio(val uri: String, val message: String?, val volumePercent: Int) : Command
     // The whole filter, so whatever the payload leaves out is cleared
     data class SetAlbumFilter(val filter: AlbumFilter) : Command
 }
@@ -31,6 +39,7 @@ enum class CommandKind {
     FORCE_OFF,
     TRANSITION_SECONDS,
     ANNOUNCE,
+    ANNOUNCE_AUDIO,
     ALBUM_FILTER,
 }
 
@@ -47,6 +56,7 @@ object Commands {
             "cmd/presence/force_off" -> CommandKind.FORCE_OFF
             "cmd/ambience/set_transition_time_secs" -> CommandKind.TRANSITION_SECONDS
             "cmd/ambience/announce" -> CommandKind.ANNOUNCE
+            "cmd/ambience/announce_audio" -> CommandKind.ANNOUNCE_AUDIO
             "cmd/ambience/set_album_filter" -> CommandKind.ALBUM_FILTER
             else -> null
         }
