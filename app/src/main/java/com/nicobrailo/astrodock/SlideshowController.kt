@@ -88,7 +88,8 @@ class SlideshowController(
     private val scope: CoroutineScope,
     // The screensaver isn't interactive: any touch wakes the device instead
     private val interactive: Boolean,
-    // Called on a tap, when interactive
+    // Called on a tap: on the home screen, or in the screensaver just before it
+    // ends (onScreensaverTouch)
     private val onTap: () -> Unit,
 ) {
     // One of the three picture views, the picture it shows and its metadata
@@ -443,21 +444,6 @@ class SlideshowController(
         pictureInfo.setBackgroundResource(if (state.infoExpanded) R.drawable.status_background else 0)
     }
 
-    // The panel is only there while something is playing (or paused, so it can
-    // be resumed). The screensaver shows it but has no working buttons: a touch
-    // ends the screensaver instead.
-    // For the screensaver, whose touches never reach the views: a touch that
-    // lands on the media panel opens the player there and then, instead of
-    // only waking to the home screen and needing a second tap. Returns whether
-    // it did. Not at night, when the panel is under the black cover.
-    fun openMediaAppIfTouched(event: MotionEvent): Boolean {
-        if (dark || nowPlayingPanel.visibility != View.VISIBLE) return false
-        val bounds = Rect()
-        if (!nowPlayingPanel.getGlobalVisibleRect(bounds)) return false
-        if (!bounds.contains(event.rawX.toInt(), event.rawY.toInt())) return false
-        return openMediaApp()
-    }
-
     private fun openMediaApp(): Boolean {
         val packageName = nowPlaying.openApp() ?: return false
         // Some apps leave no way back to the launcher (see HomeButtonService).
@@ -469,6 +455,9 @@ class SlideshowController(
         return true
     }
 
+    // The panel is only there while something is playing (or paused, so it can
+    // be resumed). The screensaver shows it but has no working buttons: a touch
+    // ends the screensaver instead.
     private fun updateNowPlaying() {
         val title = nowPlaying.title
         if (!nowPlaying.hasActiveMedia || title == null) {
@@ -782,6 +771,90 @@ class SlideshowController(
             onSwipeTouch(event)
             true
         }
+    }
+
+    // The screensaver isn't interactive, so its views never see a touch, and
+    // once it ends, the rest of the gesture can't move on to the home screen
+    // underneath: acting on the touch there took a second tap. So the
+    // screensaver passes its touches here, and ends only once the finger lifts,
+    // after the gesture has done what it would have done on the home screen: a
+    // tap opens the app list (or the player, on the media panel), and a swipe
+    // moves to the neighbouring picture, which the home screen then shows. The
+    // picture doesn't follow the finger meanwhile; the screensaver is about to
+    // go anyway. Returns true once the screensaver should end.
+    fun onScreensaverTouch(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                // A touch in the dark only brings the pictures back
+                if (dark) return true
+                downX = e.x
+                downY = e.y
+                velocityTracker?.recycle()
+                velocityTracker = VelocityTracker.obtain().also { it.addMovement(e) }
+                return false
+            }
+
+            MotionEvent.ACTION_MOVE -> {
+                velocityTracker?.addMovement(e)
+                return false
+            }
+
+            MotionEvent.ACTION_UP -> {
+                val tracker = velocityTracker ?: return true
+                velocityTracker = null
+                tracker.addMovement(e)
+                tracker.computeCurrentVelocity(1000)
+                val vx = tracker.xVelocity
+                tracker.recycle()
+
+                val dx = e.x - downX
+                val dy = e.y - downY
+                val slop = ViewConfiguration.get(context).scaledTouchSlop
+                when {
+                    abs(dx) <= slop && abs(dy) <= slop -> onScreensaverTap(e)
+                    abs(dx) > abs(dy) -> pageAtOnce(dx, vx)
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                velocityTracker?.recycle()
+                velocityTracker = null
+                return true
+            }
+
+            // Another finger joining in changes nothing
+            else -> return false
+        }
+    }
+
+    private fun onScreensaverTap(e: MotionEvent) {
+        when {
+            e.lands(nowPlayingPanel) && openMediaApp() -> return
+            // Kept in the shared state, so the home screen shows it expanded
+            e.lands(pictureInfo) -> state.infoExpanded = !state.infoExpanded
+            else -> onTap()
+        }
+    }
+
+    private fun MotionEvent.lands(view: View): Boolean {
+        if (view.visibility != View.VISIBLE) return false
+        val bounds = Rect()
+        return view.getGlobalVisibleRect(bounds) && bounds.contains(rawX.toInt(), rawY.toInt())
+    }
+
+    // The same decision as finishSwipe, without the animation
+    private fun pageAtOnce(dx: Float, vx: Float) {
+        if (!state.isConfigured || pageAnimator != null) return
+        val width = root.width.toFloat()
+        val minFling = ViewConfiguration.get(context).scaledMinimumFlingVelocity * FLING_VELOCITY_FACTOR
+        val far = abs(dx) > width * PAGE_DISTANCE_FRACTION
+        val flung = abs(vx) > minFling && sign(vx) == sign(dx)
+        if (!far && !flung) return
+        val forward = dx < 0
+        if (!(if (forward) next else prev).ready) return
+        Log.d(TAG, "Swipe ${if (forward) "forward" else "back"} in the screensaver")
+        if (forward) pageForward() else pageBack()
     }
 
     private fun onSwipeTouch(e: MotionEvent) {

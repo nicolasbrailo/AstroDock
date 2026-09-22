@@ -275,7 +275,7 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
 - `SlideshowController.kt` + `res/layout/slideshow.xml`: the slideshow itself:
   the views, the timer and the gestures over `SlideshowState`. Used by both the
   home screen and the screensaver; `interactive` is false in the screensaver,
-  where a touch wakes the device instead.
+  whose touches go through `onScreensaverTouch` instead (see below).
 - `SlideshowActivity.kt`: the slideshow as the home screen. It declares HOME and
   LAUNCHER, `singleTask` and `stateNotNeeded`. It only becomes the home screen
   once the user picks it.
@@ -284,7 +284,17 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   properties are set in `onCreate()`, before the window is created: setting them
   in `onAttachedToWindow()` leaves the window focusable, and it then swallows
   every touch, so the screensaver can't be dismissed and the device looks
-  frozen. It also ends the screensaver itself in `dispatchTouchEvent`.
+  frozen. It also ends the screensaver itself in `dispatchTouchEvent`, but only
+  when the finger lifts: a screensaver that isn't interactive never lets its
+  views see a touch, and ending it on the first one left the rest of the
+  gesture with nowhere to go (Android doesn't move a gesture to the window
+  uncovered underneath), so every action took a second tap. Until then it
+  hands the touches to `SlideshowController.onScreensaverTouch`, which does
+  what the home screen would have: a tap opens the app list (the player on the
+  media panel, the details on the picture's line), and a swipe moves to the
+  neighbour at once, without following the finger, since the screensaver is
+  about to go. The home screen then shows the result through `SlideshowState`.
+  At night, under the cover, a touch only wakes.
   `DreamService` doesn't pass changes to its window's attributes on to the
   window manager once the window is up (an activity does), so
   `onWindowAttributesChanged` does it; without that the night rule's backlight
@@ -413,8 +423,7 @@ documents the API). Keep the two behaving the same.
   list, with the home button over it if the user or `HomeButtonApps.ALWAYS`
   asked for one; the automatic detection isn't applied there.
   The screensaver shows the text but no buttons, since a touch ends it; a
-  touch on its panel also opens the player, so it doesn't take a second tap
-  (`SlideshowDreamService.dispatchTouchEvent`), except under the night cover.
+  tap on its panel opens the player like on the home screen.
   `tools/setup-device.sh` grants the notification access this needs; by hand it
   is
   `adb shell cmd notification allow_listener com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService`

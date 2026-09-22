@@ -1,5 +1,7 @@
 package com.nicobrailo.astrodock
 
+import android.app.ActivityOptions
+import android.content.Intent
 import android.service.dreams.DreamService
 import android.view.MotionEvent
 import android.view.View
@@ -18,7 +20,8 @@ import kotlinx.coroutines.cancel
 // from the system settings tab, or with tools/setup-device.sh.
 //
 // It isn't interactive, so a touch ends the screensaver and goes back to the
-// home screen, which is SlideshowActivity showing the same thing.
+// home screen, which is SlideshowActivity showing the same thing, after doing
+// what the gesture would have done there.
 class SlideshowDreamService : DreamService() {
     private var scope: CoroutineScope? = null
     private var slideshow: SlideshowController? = null
@@ -33,16 +36,17 @@ class SlideshowDreamService : DreamService() {
         isScreenBright = true
     }
 
-    // Any touch ends the screensaver and goes back to the home screen, or, if
-    // it landed on the media panel, to the app that's playing. That is decided
-    // on the first touch because the screensaver is gone before the finger
-    // lifts.
+    // Touches end the screensaver and go back to the home screen, but only once
+    // the finger lifts, after the slideshow has acted on the gesture (see
+    // SlideshowController.onScreensaverTouch). Ending it on the first touch, as
+    // DreamService does for a screensaver that isn't interactive, took a
+    // second tap for anything.
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         // Counts as the user being there, so the night rule holds off
-        SlideshowState.shared.noteTouch()
-        if (event.actionMasked == MotionEvent.ACTION_DOWN) slideshow?.openMediaAppIfTouched(event)
-        wakeUp()
-        return super.dispatchTouchEvent(event)
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) SlideshowState.shared.noteTouch()
+        val slideshow = slideshow
+        if (slideshow == null || slideshow.onScreensaverTouch(event)) wakeUp()
+        return true
     }
 
     // R.layout.slideshow is shared with SlideshowActivity, but a dream has no
@@ -58,7 +62,16 @@ class SlideshowDreamService : DreamService() {
         val root = findViewById<View>(R.id.root)
         val newScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
         scope = newScope
-        slideshow = SlideshowController(this, window, root, newScope, interactive = false) {}
+        slideshow = SlideshowController(this, window, root, newScope, interactive = false) {
+            // A service has no task to start it in. AppListActivity shares the
+            // home screen's affinity, so it still lands on top of it, and Back
+            // returns to the slideshow.
+            val fade = ActivityOptions.makeCustomAnimation(this, android.R.anim.fade_in, android.R.anim.fade_out)
+            startActivity(
+                Intent(this, AppListActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                fade.toBundle()
+            )
+        }
     }
 
     // DreamService drops changes to its window's attributes once the window is
