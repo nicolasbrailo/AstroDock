@@ -5,6 +5,7 @@ import android.animation.AnimatorListenerAdapter
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Rect
 import android.os.SystemClock
 import android.util.Log
 import android.view.GestureDetector
@@ -445,14 +446,27 @@ class SlideshowController(
     // The panel is only there while something is playing (or paused, so it can
     // be resumed). The screensaver shows it but has no working buttons: a touch
     // ends the screensaver instead.
-    private fun openMediaApp() {
-        val packageName = nowPlaying.openApp() ?: return
+    // For the screensaver, whose touches never reach the views: a touch that
+    // lands on the media panel opens the player there and then, instead of
+    // only waking to the home screen and needing a second tap. Returns whether
+    // it did. Not at night, when the panel is under the black cover.
+    fun openMediaAppIfTouched(event: MotionEvent): Boolean {
+        if (dark || nowPlayingPanel.visibility != View.VISIBLE) return false
+        val bounds = Rect()
+        if (!nowPlayingPanel.getGlobalVisibleRect(bounds)) return false
+        if (!bounds.contains(event.rawX.toInt(), event.rawY.toInt())) return false
+        return openMediaApp()
+    }
+
+    private fun openMediaApp(): Boolean {
+        val packageName = nowPlaying.openApp() ?: return false
         // Some apps leave no way back to the launcher (see HomeButtonService).
         // Only the user's choice and the fixed list count here: the automatic
         // detection needs the app's launcher entry, which LauncherModel reads.
         if (HomeButtonApps(context).shouldShow(packageName, detected = false)) {
             HomeButtonService.show(context)
         }
+        return true
     }
 
     private fun updateNowPlaying() {

@@ -33,10 +33,14 @@ class SlideshowDreamService : DreamService() {
         isScreenBright = true
     }
 
-    // Any touch ends the screensaver and goes back to the home screen
+    // Any touch ends the screensaver and goes back to the home screen, or, if
+    // it landed on the media panel, to the app that's playing. That is decided
+    // on the first touch because the screensaver is gone before the finger
+    // lifts.
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         // Counts as the user being there, so the night rule holds off
         SlideshowState.shared.noteTouch()
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) slideshow?.openMediaAppIfTouched(event)
         wakeUp()
         return super.dispatchTouchEvent(event)
     }

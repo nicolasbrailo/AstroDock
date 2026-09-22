@@ -412,7 +412,9 @@ documents the API). Keep the two behaving the same.
   own activity when it has one, else its launcher entry) rather than the app
   list, with the home button over it if the user or `HomeButtonApps.ALWAYS`
   asked for one; the automatic detection isn't applied there.
-  The screensaver shows the text but no buttons, since a touch ends it.
+  The screensaver shows the text but no buttons, since a touch ends it; a
+  touch on its panel also opens the player, so it doesn't take a second tap
+  (`SlideshowDreamService.dispatchTouchEvent`), except under the night cover.
   `tools/setup-device.sh` grants the notification access this needs; by hand it
   is
   `adb shell cmd notification allow_listener com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService`
