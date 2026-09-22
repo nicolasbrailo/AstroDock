@@ -408,6 +408,10 @@ documents the API). Keep the two behaving the same.
   too.
 - The bottom right corner shows what another app is playing (title, artist and
   album, artwork when the app provides one) with previous, play/pause and next.
+  Tapping the panel anywhere else opens the app that's playing (its session's
+  own activity when it has one, else its launcher entry) rather than the app
+  list, with the home button over it if the user or `HomeButtonApps.ALWAYS`
+  asked for one; the automatic detection isn't applied there.
   The screensaver shows the text but no buttons, since a touch ends it.
   `tools/setup-device.sh` grants the notification access this needs; by hand it
   is

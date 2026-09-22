@@ -32,6 +32,8 @@ import com.nicobrailo.astrodock.immich.ImmichClient
 import com.nicobrailo.astrodock.immich.ImmichPictureInfo
 import com.nicobrailo.astrodock.immich.ImmichPictureSize
 import com.nicobrailo.astrodock.media.NowPlaying
+import com.nicobrailo.astrodock.overlay.HomeButtonApps
+import com.nicobrailo.astrodock.overlay.HomeButtonService
 import androidx.preference.PreferenceManager
 import com.nicobrailo.astrodock.mqtt.Command
 import com.nicobrailo.astrodock.mqtt.StateReporter
@@ -175,6 +177,9 @@ class SlideshowController(
             nowPlayingPlay.setOnClickListener { nowPlaying.playPause() }
             root.findViewById<View>(R.id.now_playing_next).setOnClickListener { nowPlaying.next() }
             root.findViewById<View>(R.id.now_playing_previous).setOnClickListener { nowPlaying.previous() }
+            // The rest of the panel opens the player, rather than falling
+            // through to the slideshow, whose tap opens the app list
+            nowPlayingPanel.setOnClickListener { openMediaApp() }
             pictureInfo.setOnClickListener {
                 state.infoExpanded = !state.infoExpanded
                 updatePictureInfo()
@@ -440,6 +445,16 @@ class SlideshowController(
     // The panel is only there while something is playing (or paused, so it can
     // be resumed). The screensaver shows it but has no working buttons: a touch
     // ends the screensaver instead.
+    private fun openMediaApp() {
+        val packageName = nowPlaying.openApp() ?: return
+        // Some apps leave no way back to the launcher (see HomeButtonService).
+        // Only the user's choice and the fixed list count here: the automatic
+        // detection needs the app's launcher entry, which LauncherModel reads.
+        if (HomeButtonApps(context).shouldShow(packageName, detected = false)) {
+            HomeButtonService.show(context)
+        }
+    }
+
     private fun updateNowPlaying() {
         val title = nowPlaying.title
         if (!nowPlaying.hasActiveMedia || title == null) {

@@ -1,7 +1,9 @@
 package com.nicobrailo.astrodock.media
 
 import android.content.ComponentName
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.graphics.Bitmap
 import android.media.AudioManager
 import android.media.MediaMetadata
@@ -18,7 +20,7 @@ import android.util.Log
 // Reading this needs notification access, which the user grants in the System
 // tab (see MediaListenerService). Without it nothing is shown and the slideshow
 // carries on as before.
-class NowPlaying(context: Context, private val onChanged: () -> Unit) {
+class NowPlaying(private val context: Context, private val onChanged: () -> Unit) {
     private val sessionManager = context.getSystemService(MediaSessionManager::class.java)
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val listenerComponent = ComponentName(context, MediaListenerService::class.java)
@@ -122,6 +124,30 @@ class NowPlaying(context: Context, private val onChanged: () -> Unit) {
     fun previous() {
         Log.i(TAG, "Previous track on ${controller?.packageName}")
         controller?.transportControls?.skipToPrevious()
+    }
+
+    // Brings the app that's playing to the front. The session's own activity
+    // is preferred, since it is usually the player screen rather than the
+    // app's start page. Returns the package opened, or null if nothing was.
+    fun openApp(): String? {
+        val controller = controller ?: return null
+        val packageName = controller.packageName
+        try {
+            controller.sessionActivity?.let {
+                Log.i(TAG, "Opening the player of $packageName")
+                it.send()
+                return packageName
+            }
+        } catch (e: PendingIntent.CanceledException) {
+            Log.w(TAG, "Player activity of $packageName is gone, opening the app instead", e)
+        }
+        val launch = context.packageManager.getLaunchIntentForPackage(packageName) ?: run {
+            Log.w(TAG, "$packageName has nothing to launch")
+            return null
+        }
+        Log.i(TAG, "Opening $packageName")
+        context.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return packageName
     }
 
     private fun activeSessions(): List<MediaController> = try {
