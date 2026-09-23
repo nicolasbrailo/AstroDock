@@ -10,10 +10,10 @@ import android.util.Log
 // The Portal's theme for the framework (the RRO com.facebook.aloha.rro.niu.android)
 // paints the system installer's text in the colour of whatever is behind it, so
 // confirming an install -- including the app updating itself from the Apps tab
-// -- means tapping a blank white page. Dropping that overlay is the real fix,
-// but only adb can do it (tools/setup-device.sh) and the Portal may well put it
-// back on boot. The outline is the part the app can reach by itself: it can't
-// make the colours right, but no colour can hide text once it is on.
+// -- means tapping a blank white page. Dropping that overlay isn't an option,
+// since the keyboard needs it (see tools/setup-device.sh). The outline is
+// the fix: it can't make the colours right, but no colour can hide text once
+// it is on.
 //
 // It is a secure setting, so it needs the same adb grant as sleep_timeout, and
 // it applies to every app on the device. That is why it is a switch the user

@@ -650,19 +650,21 @@ the server and sampling settings reset the slideshow.
   `com.android.packageinstaller` inherits like every other app. The dialog is
   fine underneath: `uiautomator dump` reads every string and the buttons take
   taps. Measured by counting colours in the button strip: exactly one (pure
-  white, so no glyphs) with the RRO on, the stock light dialog with it off. Its
-  `mIsStatic` is false, so `cmd overlay disable` works and `enable` puts it
-  back; `tools/setup-device.sh` disables it. Night mode makes no difference, and
-  the uninstall dialog in the same package is fine, being an AlertDialog theme.
-  This hits the app's own Apps tab and its self-update too, since
-  `ApkInstaller` starts the same activity. Whether the Portal re-enables its
-  overlay on boot hasn't been measured, which is why the script also turns on
-  `high_text_contrast_enabled`: that outlines every string, so nothing can go
-  invisible even if the overlay comes back. That half is a secure setting, so
-  the app can do it too, and the System tab has a switch for it
-  (`TextContrast`); the overlay needs `CHANGE_OVERLAY_PACKAGES`, which is
-  `signature|privileged` with no `development` flag, so `pm grant` can't hand
-  it over and adb stays the only way to that one.
+  white, so no glyphs) with the RRO on, the stock light dialog with it off.
+  Night mode makes no difference, and the uninstall dialog in the same package
+  is fine, being an AlertDialog theme. This hits the app's own Apps tab and its
+  self-update too, since `ApkInstaller` starts the same activity.
+  **Don't disable the RRO**, although `cmd overlay disable` can (its
+  `mIsStatic` is false): the keyboard (LatinIME, the only IME) is themed by it
+  too, and without it the keyboard's window still covers the screen (from the
+  status bar down, above the app) but draws nothing, so it swallows every tap.
+  Measured 2026-09-23: any text setting's dialog showed no keyboard, and its OK
+  and Cancel did nothing. An earlier `tools/setup-device.sh` disabled it; the
+  script now enables it, which repairs that. What fixes the installer instead
+  is `high_text_contrast_enabled`, which outlines every string, so nothing can
+  go invisible: measured with the RRO on, the dialog's text and its Cancel and
+  Install buttons are all readable. It is a secure setting, so the app can set
+  it too, and the System tab has a switch for it (`TextContrast`).
 - **The system's notification access screen closes itself**, so nothing on the
   device can turn the media panel on. `Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS`
   (whose value really does repeat the `ACTION_` prefix, unlike its `_DETAIL_`
@@ -693,9 +695,9 @@ the server and sampling settings reset the slideshow.
   screensaver while the screen is still off, so the one the Portal wakes up to
   is already running.
 - `tools/setup-device.sh` takes no arguments: it applies everything an app can't
-  set for itself (home screen, screensaver, bug pill, app verifier, the theme
-  that hides the install dialog, notification access, the device admin, and
-  the app-ops behind the System tab's other permissions: `WRITE_SETTINGS`,
+  set for itself (home screen, screensaver, bug pill, app verifier, high
+  contrast text for the install dialog, notification access, the device admin,
+  and the app-ops behind the System tab's other permissions: `WRITE_SETTINGS`,
   `SYSTEM_ALERT_WINDOW`, `REQUEST_INSTALL_PACKAGES`) and prints the result.
   Its header lists the commands to undo each one. Nothing else is needed.
 - `sleep_timeout` does not stick: it was back at the Portal's 1200000 twice

@@ -10,12 +10,12 @@
 # floating bug-report pill, turns off the Portal's app verifier, which only
 # accepts apps signed by Facebook and fails every other install with "App
 # certificate rejected" (adb installs are never verified), makes the system's
-# install dialog readable again (see below), and grants the notification access
-# the media controls need and the device admin that turns the screen off at
-# night, which on the Portal only adb can do (see below). It also grants the
-# permissions the System tab could ask for on the device (changing system
-# settings, drawing over other apps, installing apps), so one run leaves that
-# tab with nothing missing.
+# install dialog readable again with high contrast text (see below), and grants
+# the notification access the media controls need and the device admin that
+# turns the screen off at night, which on the Portal only adb can do (see
+# below). It also grants the permissions the System tab could ask for on the
+# device (changing system settings, drawing over other apps, installing apps),
+# so one run leaves that tab with nothing missing.
 # To undo any of it:
 #
 #   adb shell cmd package set-home-activity com.facebook.alohaapps.launcher
@@ -24,7 +24,6 @@
 #     com.facebook.alohaapps.launcher/com.facebook.aloha.app.home.touch.HomeDreamService
 #   adb shell appops set com.facebook.aloha.system.services SYSTEM_ALERT_WINDOW allow
 #   adb shell settings put global package_verifier_enable 1
-#   adb shell cmd overlay enable com.facebook.aloha.rro.niu.android
 #   adb shell settings put secure high_text_contrast_enabled 0
 #   adb shell cmd notification disallow_listener \
 #     com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService
@@ -51,11 +50,12 @@ OVERLAY_PKG=com.facebook.aloha.system.services
 # the question come out dark on its dark header, and Cancel/Install come out
 # white on the white button bar. The dialog still works and accessibility still
 # reads it, but on screen it is a blank white page, which is what installing
-# anything from F-Droid, or from the app's own Apps tab, looks like. Measured on
-# the device: counting the colours in the button strip gives exactly one before
-# this, and the stock dialog after. It targets the `android` package, so
-# dropping it rethemes every app that uses DeviceDefault, not just the
-# installer.
+# anything from F-Droid, or from the app's own Apps tab, looks like. It must
+# stay on all the same: the keyboard (LatinIME) is themed by it too, and without
+# it the keyboard's window still covers the screen but draws nothing, so it
+# swallows every tap, including OK and Cancel on the dialog that asked for it.
+# An earlier version of this script disabled it, so it is enabled here to
+# repair a device set up by that one.
 THEME_RRO=com.facebook.aloha.rro.niu.android
 
 echo "Setting up $PKG..."
@@ -96,11 +96,9 @@ adb shell appops set "$OVERLAY_PKG" SYSTEM_ALERT_WINDOW deny
 adb shell am force-stop "$OVERLAY_PKG"
 adb shell settings put global package_verifier_enable 0
 
-# The overlay is what actually fixes the colours; high contrast text is the belt
-# to its braces, since it draws every string with a contrasting outline, so no
-# theme can make text invisible again. Both are set because the Portal may well
-# put its own overlay back on boot, and then the outline is all that is left.
-adb shell cmd overlay disable "$THEME_RRO"
+# High contrast text draws every string with a contrasting outline, so the
+# overlay's colours can't make the installer's text invisible any more.
+adb shell cmd overlay enable "$THEME_RRO"
 adb shell settings put secure high_text_contrast_enabled 1
 
 echo
@@ -112,7 +110,7 @@ echo "screensaver after: $(adb shell settings get system screen_off_timeout | tr
 echo "screen off after:  $(adb shell settings get secure sleep_timeout | tr -d '\r') ms (sleep_timeout, since the Portal last saw someone)"
 echo "bug pill overlay: $(adb shell appops get "$OVERLAY_PKG" SYSTEM_ALERT_WINDOW | tr -d '\r' | head -1)"
 echo "app verifier:     $(adb shell settings get global package_verifier_enable | tr -d '\r') (1 rejects apps not signed by Facebook)"
-echo "portal theme:     $(adb shell cmd overlay list | tr -d '\r' | grep "$THEME_RRO") ([x] hides the install dialog's text)"
+echo "portal theme:     $(adb shell cmd overlay list | tr -d '\r' | grep "$THEME_RRO") ([x] is needed by the keyboard)"
 echo "high contrast:    $(adb shell settings get secure high_text_contrast_enabled | tr -d '\r') (1 outlines every string, so none can vanish)"
 echo "screen off admin: $(adb shell dumpsys device_policy | tr -d '\r' \
   | grep -q "$PKG/.ScreenAdminReceiver" && echo "granted" || echo "MISSING") (night screen off)"
