@@ -61,4 +61,26 @@ class InstallableTest {
         // Some other algorithm, which we can't check the APK against
         assertNull(sameBuild("sha512:$hash", hash))
     }
+
+    @Test
+    fun firefoxApkUrlFollowsTheArchiveLayout() {
+        assertEquals(
+            "https://archive.mozilla.org/pub/fenix/releases/156.0.1/android/" +
+                "fenix-156.0.1-android-arm64-v8a/fenix-156.0.1.multi.android-arm64-v8a.apk",
+            firefoxApkUrl("156.0.1"),
+        )
+    }
+
+    @Test
+    fun onlyPlainVersionsGoInAUrl() {
+        assertTrue(isPlainVersion("156.0.1"))
+        assertTrue(isPlainVersion("157.0"))
+        assertTrue(isPlainVersion("157"))
+        // A beta or nightly is never what the stable key should hold
+        assertFalse(isPlainVersion("157.0b5"))
+        assertFalse(isPlainVersion("158.0a1"))
+        assertFalse(isPlainVersion(""))
+        assertFalse(isPlainVersion("156.0/../../x"))
+        assertFalse(isPlainVersion("156..0"))
+    }
 }

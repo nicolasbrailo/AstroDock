@@ -18,6 +18,8 @@ import androidx.lifecycle.lifecycleScope
 import com.nicobrailo.astrodock.apps.ApkInstaller
 import com.nicobrailo.astrodock.apps.INSTALLABLE_APPS
 import com.nicobrailo.astrodock.apps.Installable
+import com.nicobrailo.astrodock.apps.VersionFeed
+import com.nicobrailo.astrodock.apps.isPlainVersion
 import com.nicobrailo.astrodock.apps.pickApkAsset
 import com.nicobrailo.astrodock.apps.sameBuild
 import okhttp3.Request
@@ -150,6 +152,8 @@ class InstallAppsFragment : Fragment() {
                     }
                 }
             }
+        } else if (app.versionFeed != null) {
+            versionFeedRow(app, app.versionFeed, installed, status, button)
         } else {
             status.setText(if (installed) R.string.install_installed else R.string.install_not_installed)
 
@@ -169,6 +173,63 @@ class InstallAppsFragment : Fragment() {
             }
         }
         return view
+    }
+
+    // A row for an app whose current version is published (see VersionFeed).
+    // Unlike a GitHub release, that is checked every time the tab is shown
+    // rather than when asked: it is one small request, with nothing to hash.
+    // Until it answers, or if it fails, the row offers what it would without
+    // the feed.
+    private fun versionFeedRow(
+        app: Installable, feed: VersionFeed, installed: Boolean, status: TextView, button: Button,
+    ) {
+        val installedVersion = if (installed) installedVersion(app) else null
+        if (installed) {
+            status.text = installedVersion?.let { getString(R.string.install_current_version, it) }
+                ?: getString(R.string.install_installed)
+            button.setText(R.string.install_button_open)
+            button.setOnClickListener { open(app) }
+        } else {
+            status.setText(R.string.install_not_installed)
+            button.setText(R.string.install_button_page)
+            button.setOnClickListener { openInBrowser(app.pageUrl) }
+        }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val latest = try {
+                withContext(Dispatchers.IO) { latestVersion(feed) }
+            } catch (e: Exception) {
+                Log.w(TAG, "Can't read the current version of ${app.name}", e)
+                return@launch
+            }
+            Log.d(TAG, "${app.name}: installed is $installedVersion, the current one is $latest")
+            when {
+                installedVersion == latest -> {
+                    status.text = getString(R.string.install_up_to_date_version, latest)
+                    return@launch
+                }
+                installed -> status.text = getString(R.string.install_update_available, latest)
+                else -> status.text = getString(R.string.install_not_installed_latest, latest)
+            }
+            button.setText(R.string.install_button_install)
+            button.setOnClickListener { download(app.copy(apkUrl = feed.apkUrl(latest)), status, button) }
+        }
+    }
+
+    private fun installedVersion(app: Installable): String? = try {
+        requireContext().packageManager.getPackageInfo(app.packageName, 0).versionName
+    } catch (e: PackageManager.NameNotFoundException) {
+        null
+    }
+
+    private fun latestVersion(feed: VersionFeed): String {
+        val req = Request.Builder().url(feed.url).header("Accept", "application/json").build()
+        return installer.http.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) throw IOException("HTTP ${resp.code}")
+            val version = JSONObject(resp.body.string()).optString(feed.key)
+            if (!isPlainVersion(version)) throw IOException("Unexpected version \"$version\"")
+            version
+        }
     }
 
     // What the latest release offers: its tag, the APK to download from it (null

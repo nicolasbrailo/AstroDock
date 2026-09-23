@@ -111,6 +111,16 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   play is only believed while `AudioManager.isMusicActive` is true (or it plays
   to another device), and such a session is skipped when choosing which one to
   show. A paused session is shown for 15 minutes, so it can still be resumed.
+  Those 15 minutes are timed by `media/SessionActivity.kt` (unit tested), not
+  by the session's own update time: that only says when the app last published
+  a state, and Spotify publishes the same paused one again every few minutes,
+  which kept the panel up for hours. So the clock only restarts when the state,
+  position, queue item or title actually differs, or when the panel switches to
+  another app. There is one clock for the process, so the handovers between the
+  home screen and the screensaver don't restart it. A remote session (casting,
+  or Spotify following another device over Connect) is treated like a local
+  one, so the panel controls it too; only the `isMusicActive` check is skipped
+  for it, since nothing is audible here.
   Sound stopping isn't reported, so the panel is also re-checked every 5s.
 - `InstallAppsFragment.kt` + `apps/Installable.kt`, `apps/ApkInstaller.kt`: the
   Apps tab, which offers apps worth having on a Portal (it has no app store).
@@ -133,6 +143,17 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   newest release whether or not that release holds a file by that name, so a
   name that's wrong is only found out when the download 404s. `pickApkAsset`
   and `sameBuild` hold both decisions as pure functions, and are unit tested.
+  An entry with a `versionFeed` (Firefox) is for a project that publishes its
+  current version rather than a URL that serves it: Mozilla has no "latest"
+  URL for Android (`download.mozilla.org` only knows the desktop builds), but
+  `product-details.mozilla.org/1.0/mobile_versions.json` says the stable
+  version under `version`, and the archive's path is made of it
+  (`firefoxApkUrl`, arm64 only). The row reads the feed every time the tab is
+  shown, since it is one small request, and compares it with the installed
+  `versionName`: equal is up to date, anything else offers the download. The
+  version must be digits and dots (`isPlainVersion`) before it goes in a URL,
+  which also keeps a beta like `157.0b5` out. If the feed can't be read, the
+  row offers what it would without it: open, or the download page.
   Keep a debug build first in the list: `tools/push-config.sh` and
   `tools/force-uninstall.sh` go through `run-as`, which a release build doesn't
   allow. Installing needs

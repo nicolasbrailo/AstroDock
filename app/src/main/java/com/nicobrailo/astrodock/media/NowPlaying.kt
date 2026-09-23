@@ -8,6 +8,7 @@ import android.graphics.Bitmap
 import android.media.AudioManager
 import android.media.MediaMetadata
 import android.media.session.MediaController
+import android.media.session.MediaSession
 import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.SystemClock
@@ -37,8 +38,10 @@ class NowPlaying(private val context: Context, private val onChanged: () -> Unit
     // Apps can leave a session behind that still says it's playing: Jellyfin
     // does, and the stale session ignores even the system's own pause. So a
     // session that claims to play is only believed while sound is actually
-    // coming out, unless it plays to another device (casting), where there's
-    // nothing to hear locally.
+    // coming out, unless it plays to another device (casting, or Spotify
+    // following another device over Connect), where there's nothing to hear
+    // locally. Otherwise a remote session is treated like a local one, so the
+    // panel can control music playing elsewhere too.
     val isPlaying: Boolean
         get() {
             val state = controller?.playbackState?.state ?: return false
@@ -53,18 +56,30 @@ class NowPlaying(private val context: Context, private val onChanged: () -> Unit
     val hasActiveMedia: Boolean
         get() = when (controller?.playbackState?.state) {
             PlaybackState.STATE_PLAYING -> isPlaying
-            PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING -> ageMillis() < RECENT_MILLIS
+            PlaybackState.STATE_PAUSED, PlaybackState.STATE_BUFFERING ->
+                SystemClock.elapsedRealtime() - changedAt < RECENT_MILLIS
             else -> false
         }
 
     private val isRemotePlayback: Boolean
         get() = controller?.playbackInfo?.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_REMOTE
 
-    // How long ago this session last said anything about its playback
-    private fun ageMillis(): Long {
-        val updated = controller?.playbackState?.lastPositionUpdateTime ?: return Long.MAX_VALUE
-        if (updated <= 0) return Long.MAX_VALUE
-        return SystemClock.elapsedRealtime() - updated
+    // When the session on show last changed (see SessionActivity), in
+    // elapsedRealtime
+    private var changedAt = 0L
+
+    private fun noteChanges() {
+        val controller = controller ?: return
+        val state = controller.playbackState
+        val snapshot = SessionSnapshot(
+            state = state?.state ?: PlaybackState.STATE_NONE,
+            position = state?.position ?: 0,
+            activeItem = state?.activeQueueItemId ?: MediaSession.QueueItem.UNKNOWN_ID.toLong(),
+            title = metadataText(MediaMetadata.METADATA_KEY_TITLE),
+        )
+        changedAt = SessionActivity.shared.observe(
+            controller.packageName, snapshot, SystemClock.elapsedRealtime(), controller.updatedAt,
+        )
     }
 
     val artwork: Bitmap?
@@ -81,8 +96,14 @@ class NowPlaying(private val context: Context, private val onChanged: () -> Unit
     }
 
     private val controllerCallback = object : MediaController.Callback() {
-        override fun onPlaybackStateChanged(state: PlaybackState?) = onChanged()
-        override fun onMetadataChanged(metadata: MediaMetadata?) = onChanged()
+        override fun onPlaybackStateChanged(state: PlaybackState?) {
+            noteChanges()
+            onChanged()
+        }
+        override fun onMetadataChanged(metadata: MediaMetadata?) {
+            noteChanges()
+            onChanged()
+        }
         override fun onSessionDestroyed() {
             use(activeSessions())
             onChanged()
@@ -172,6 +193,7 @@ class NowPlaying(private val context: Context, private val onChanged: () -> Unit
         controller?.unregisterCallback(controllerCallback)
         controller = best
         best?.registerCallback(controllerCallback)
+        noteChanges()
     }
 
     // When this session last said anything about its playback

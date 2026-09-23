@@ -21,6 +21,9 @@ data class Installable(
     // redirects to the release whether or not it holds a file by that name, so
     // a wrong name isn't found out until the download has already failed.
     val githubAssets: List<String> = emptyList(),
+    // For a project that publishes its current version rather than a URL that
+    // always serves it, as Mozilla does: the APK URL is built from the version
+    val versionFeed: VersionFeed? = null,
 ) {
     fun isInstalled(context: Context): Boolean = try {
         context.packageManager.getPackageInfo(packageName, 0)
@@ -29,6 +32,21 @@ data class Installable(
         false
     }
 }
+
+// Where a project says what its current version is: a JSON object at `url`
+// with the version under `key`, and how to get from that to the APK
+data class VersionFeed(val url: String, val key: String, val apkUrl: (String) -> String)
+
+// Whether a version read from a feed is only digits and dots, so that it can be
+// put in a URL path without turning it into some other path
+fun isPlainVersion(version: String): Boolean = Regex("""\d+(\.\d+)*""").matches(version)
+
+// Mozilla keeps every Firefox for Android release in its archive, at a path
+// made of the version. Only the arm64 build: that is what the Portal is, and
+// Mozilla doesn't publish one APK for every architecture.
+fun firefoxApkUrl(version: String): String =
+    "https://archive.mozilla.org/pub/fenix/releases/$version/android/" +
+        "fenix-$version-android-arm64-v8a/fenix-$version.multi.android-arm64-v8a.apk"
 
 // Picks which of a release's files to download: the first name the app asked
 // for that the release actually has, or else any APK in it, so that a release
@@ -97,6 +115,22 @@ val INSTALLABLE_APPS = listOf(
         // whatsapp.com serves the current release from this URL, as an APK
         apkUrl = "https://www.whatsapp.com/android/current/WhatsApp.apk",
         pageUrl = "https://www.whatsapp.com/download/android",
+    ),
+    Installable(
+        name = "Firefox",
+        packageName = "org.mozilla.firefox",
+        description = "Web browser. Downloaded from Mozilla's archive: the arm64 build of the " +
+            "current stable release, which is a large download (about 130 MB).",
+        // Mozilla has no URL that always serves the current Android release
+        // (download.mozilla.org only knows the desktop ones), but it does
+        // publish the version, next to the beta and nightly ones
+        apkUrl = null,
+        pageUrl = "https://archive.mozilla.org/pub/fenix/releases/",
+        versionFeed = VersionFeed(
+            url = "https://product-details.mozilla.org/1.0/mobile_versions.json",
+            key = "version",
+            apkUrl = ::firefoxApkUrl,
+        ),
     ),
     Installable(
         name = "Spotify",
