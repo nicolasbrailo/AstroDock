@@ -2,6 +2,7 @@ package com.nicobrailo.astrodock
 
 import android.content.ClipData
 import android.content.Intent
+import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings as AndroidSettings
@@ -24,31 +25,48 @@ import com.nicobrailo.astrodock.apps.FolderOps
 import com.nicobrailo.astrodock.apps.FolderStore
 import com.nicobrailo.astrodock.apps.LauncherApp
 import com.nicobrailo.astrodock.apps.LauncherModel
+import com.nicobrailo.astrodock.apps.PinnedShortcut
 import com.nicobrailo.astrodock.overlay.HomeButtonApps
 import com.nicobrailo.astrodock.overlay.HomeButtonService
 import kotlinx.coroutines.launch
 import java.util.UUID
 
-// Grid of the installed apps and the folders they're grouped into. Tapping an
-// app launches it and closes the list, so coming back lands on the slideshow.
-// Tapping a folder opens it. The button in the corner opens SettingsActivity.
+// Grid of the installed apps, the folders they're grouped into and the
+// shortcuts other apps pinned (see PinShortcutActivity). Tapping an app or a
+// shortcut opens it and closes the list, so coming back lands on the
+// slideshow. Tapping a folder opens it. The button in the corner opens SettingsActivity.
 //
 // Long-pressing an item picks it up:
 //  - Dropping it on another app puts both in a new folder; dropping it on a
 //    folder adds it to that folder.
-//  - Letting go without moving shows a menu instead (app info, uninstall, or
-//    renaming and ungrouping a folder).
+//  - Letting go without moving shows a menu instead (app info, uninstall,
+//    renaming and ungrouping a folder, or removing a shortcut).
+//  - Shortcuts go in folders like apps do.
 class AppListActivity : AppCompatActivity() {
-    // What the grid shows: an app on its own, or a folder of apps
+    // What the grid shows: an app or a shortcut on its own, or a folder of them
     private sealed interface Entry {
         val label: String
     }
 
-    private data class AppItem(val app: LauncherApp) : Entry {
-        override val label get() = app.label
+    // What a folder can hold
+    private sealed interface Member : Entry {
+        val key: String
+        val icon: Drawable?
     }
 
-    private data class FolderItem(val folder: Folder, val apps: List<LauncherApp>) : Entry {
+    private data class AppItem(val app: LauncherApp) : Member {
+        override val label get() = app.label
+        override val key get() = app.key
+        override val icon get() = app.icon
+    }
+
+    private data class ShortcutItem(val shortcut: PinnedShortcut) : Member {
+        override val label get() = shortcut.label
+        override val key get() = shortcut.key
+        override val icon get() = shortcut.icon
+    }
+
+    private data class FolderItem(val folder: Folder, val members: List<Member>) : Entry {
         override val label get() = folder.name
     }
 
@@ -58,6 +76,7 @@ class AppListActivity : AppCompatActivity() {
     private val adapter = EntryAdapter()
 
     private var apps: List<LauncherApp> = emptyList()
+    private var shortcuts: List<PinnedShortcut> = emptyList()
     private var folders: List<Folder> = emptyList()
 
     // The item being dragged, and whether the drag ever left it. A drag that
@@ -118,8 +137,19 @@ class AppListActivity : AppCompatActivity() {
     private fun refresh() {
         lifecycleScope.launch {
             apps = model.apps()
-            // Apps uninstalled while we weren't looking leave their folders
-            val pruned = FolderOps.forApps(folderStore.load(), apps.map { it.key }.toSet())
+            shortcuts = model.shortcuts()
+            // Apps uninstalled and shortcuts removed while we weren't looking
+            // leave their folders. Unless we can't see the shortcuts at all
+            // (not the default home app right now): that isn't them being
+            // removed, and they come back when we are again.
+            val existing = (apps.map { it.key } + shortcuts.map { it.key }).toSet()
+            val loaded = folderStore.load()
+            val kept = if (model.canReadShortcuts()) {
+                existing
+            } else {
+                existing + loaded.flatMap { it.appKeys }.filter { it.startsWith(PinnedShortcut.KEY_PREFIX) }
+            }
+            val pruned = FolderOps.forApps(loaded, kept)
             updateFolders(pruned, save = pruned != folders)
         }
     }
@@ -128,10 +158,11 @@ class AppListActivity : AppCompatActivity() {
         folders = newFolders
         if (save) folderStore.save(newFolders)
 
-        val byKey = apps.associateBy { it.key }
+        val members: List<Member> = apps.map { AppItem(it) } + shortcuts.map { ShortcutItem(it) }
+        val byKey = members.associateBy { it.key }
         val folderItems = folders.map { folder -> FolderItem(folder, folder.appKeys.mapNotNull(byKey::get)) }
         val grouped = folders.flatMap { it.appKeys }.toSet()
-        val loose = apps.filterNot { it.key in grouped }.map { AppItem(it) }
+        val loose = members.filterNot { it.key in grouped }
         adapter.submit((folderItems + loose).sortedBy { it.label.lowercase() })
     }
 
@@ -155,12 +186,26 @@ class AppListActivity : AppCompatActivity() {
         }
     }
 
+    private fun launch(shortcut: PinnedShortcut) {
+        if (!model.launch(shortcut)) {
+            // Removed or disabled since the list was built
+            refresh()
+            return
+        }
+        // Only the user's choice and the fixed list count here, as for the
+        // media panel: the automatic detection reads an app's launcher entry
+        if (homeButtonApps.shouldShow(shortcut.packageName, detected = false)) {
+            HomeButtonService.show(this)
+        }
+        finish()
+    }
+
     private fun openFolder(item: FolderItem) {
         val view = layoutInflater.inflate(R.layout.dialog_folder, null) as RecyclerView
         val contents = EntryAdapter()
         view.layoutManager = GridLayoutManager(this, columns().coerceAtMost(4))
         view.adapter = contents
-        contents.submit(item.apps.map { AppItem(it) })
+        contents.submit(item.members)
 
         val dialog = AlertDialog.Builder(this, R.style.Theme_AstroDock_Dialog)
             .setTitle(item.folder.name)
@@ -168,11 +213,19 @@ class AppListActivity : AppCompatActivity() {
             .show()
         contents.onClick = { entry ->
             dialog.dismiss()
-            launch((entry as AppItem).app)
+            when (entry) {
+                is AppItem -> launch(entry.app)
+                is ShortcutItem -> launch(entry.shortcut)
+                is FolderItem -> Unit // Folders don't nest
+            }
         }
-        // Inside a folder the menu can also take an app out of it
+        // Inside a folder the menu can also take an item out of it
         contents.onLongPress = { entry, anchor ->
-            appMenu(anchor, (entry as AppItem).app, insideFolder = true) { dialog.dismiss() }
+            when (entry) {
+                is AppItem -> appMenu(anchor, entry.app, insideFolder = true) { dialog.dismiss() }
+                is ShortcutItem -> shortcutMenu(anchor, entry.shortcut, insideFolder = true) { dialog.dismiss() }
+                is FolderItem -> Unit
+            }
         }
     }
 
@@ -182,7 +235,26 @@ class AppListActivity : AppCompatActivity() {
         when (entry) {
             is AppItem -> appMenu(anchor, entry.app, insideFolder = false) {}
             is FolderItem -> folderMenu(anchor, entry.folder)
+            is ShortcutItem -> shortcutMenu(anchor, entry.shortcut, insideFolder = false) {}
         }
+    }
+
+    private fun shortcutMenu(anchor: View, shortcut: PinnedShortcut, insideFolder: Boolean, onChanged: () -> Unit) {
+        val menu = PopupMenu(this, anchor)
+        // The system reports the change, which refreshes the list
+        menu.menu.add(R.string.app_menu_remove_shortcut).setOnMenuItemClickListener {
+            model.unpin(shortcut)
+            onChanged()
+            true
+        }
+        if (insideFolder) {
+            menu.menu.add(R.string.app_menu_remove_from_folder).setOnMenuItemClickListener {
+                updateFolders(FolderOps.removeApp(folders, shortcut.key))
+                onChanged()
+                true
+            }
+        }
+        menu.show()
     }
 
     private fun appMenu(anchor: View, app: LauncherApp, insideFolder: Boolean, onChanged: () -> Unit) {
@@ -302,19 +374,19 @@ class AppListActivity : AppCompatActivity() {
     // What dropping one item on another means
     private fun drop(source: Entry, target: Entry) {
         when {
-            // Two apps make a new folder
-            source is AppItem && target is AppItem -> updateFolders(
+            // Two apps or shortcuts make a new folder
+            source is Member && target is Member -> updateFolders(
                 FolderOps.create(
                     folders,
                     UUID.randomUUID().toString(),
                     getString(R.string.folder_default_name),
-                    target.app.key,
-                    source.app.key,
+                    target.key,
+                    source.key,
                 )
             )
-            // An app dropped on a folder joins it
-            source is AppItem && target is FolderItem ->
-                updateFolders(FolderOps.addApp(folders, target.folder.id, source.app.key))
+            // One dropped on a folder joins it
+            source is Member && target is FolderItem ->
+                updateFolders(FolderOps.addApp(folders, target.folder.id, source.key))
             // Dragging folders around isn't supported
             else -> Unit
         }
@@ -330,6 +402,7 @@ class AppListActivity : AppCompatActivity() {
             when (entry) {
                 is AppItem -> launch(entry.app)
                 is FolderItem -> openFolder(entry)
+                is ShortcutItem -> launch(entry.shortcut)
             }
         }
         var onLongPress: ((Entry, View) -> Unit)? = null
@@ -356,11 +429,11 @@ class AppListActivity : AppCompatActivity() {
             val view = holder.itemView
             view.findViewById<TextView>(R.id.label).text = entry.label
             when (entry) {
-                is AppItem -> view.findViewById<ImageView>(R.id.icon).setImageDrawable(entry.app.icon)
+                is Member -> view.findViewById<ImageView>(R.id.icon).setImageDrawable(entry.icon)
                 is FolderItem -> {
                     val previews = listOf(R.id.icon1, R.id.icon2, R.id.icon3, R.id.icon4)
                     for ((i, id) in previews.withIndex()) {
-                        view.findViewById<ImageView>(id).setImageDrawable(entry.apps.getOrNull(i)?.icon)
+                        view.findViewById<ImageView>(id).setImageDrawable(entry.members.getOrNull(i)?.icon)
                     }
                 }
             }

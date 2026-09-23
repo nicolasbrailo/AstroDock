@@ -8,6 +8,7 @@ import android.content.Context
 import android.graphics.Rect
 import android.os.SystemClock
 import android.util.Log
+import android.util.TypedValue
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.VelocityTracker
@@ -18,6 +19,7 @@ import android.view.WindowManager
 import android.view.animation.DecelerateInterpolator
 import android.widget.ImageButton
 import android.widget.ImageView
+import android.widget.LinearLayout
 import android.widget.TextView
 import coil3.SingletonImageLoader
 import coil3.asDrawable
@@ -27,6 +29,8 @@ import coil3.request.ErrorResult
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.size.ViewSizeResolver
+import com.nicobrailo.astrodock.apps.LauncherModel
+import com.nicobrailo.astrodock.apps.PinnedShortcut
 import com.nicobrailo.astrodock.immich.AlbumFilter
 import com.nicobrailo.astrodock.immich.AlbumPicture
 import com.nicobrailo.astrodock.immich.ImmichClient
@@ -69,6 +73,9 @@ import kotlin.math.sign
 // - The bottom right corner shows what another app is playing, with controls,
 //   so the device can play music while the pictures keep going (see
 //   NowPlaying). It needs notification access, and stays hidden without it.
+// - The top left corner shows the shortcuts other apps pinned (a web page from
+//   Firefox), so they are one tap away, even from the screensaver, unless the
+//   Slideshow tab turns them off.
 // - If the user asked for it, the screen goes dark during the night hours
 //   (see checkNight), a little after they last touched it.
 //
@@ -134,6 +141,12 @@ class SlideshowController(
     private val nowPlayingPlay: ImageButton = root.findViewById(R.id.now_playing_play)
     private val nowPlaying = NowPlaying(context) { updateNowPlaying() }
     private var nowPlayingJob: Job? = null
+
+    // The pinned shortcuts, as icons. Only watched while the slideshow is
+    // visible; the system says when one is pinned or removed.
+    private val shortcutsColumn: LinearLayout = root.findViewById(R.id.shortcuts)
+    private val launcherModel = LauncherModel(context) { loadShortcuts() }
+    private var shortcutsJob: Job? = null
 
     // Current temperature and sky, over the clock. Refreshed on the hour.
     private val weatherPanel: View = root.findViewById(R.id.weather)
@@ -236,6 +249,13 @@ class SlideshowController(
 
         startWeather()
 
+        // Always cleared first, so turning the setting off takes them away
+        showShortcuts(emptyList())
+        if (state.settings?.showShortcuts != false) {
+            launcherModel.start()
+            loadShortcuts()
+        }
+
         if (!state.isConfigured) {
             showStatus(context.getString(R.string.slideshow_not_configured))
             bindFromState()
@@ -258,10 +278,59 @@ class SlideshowController(
         setDark(false)
         nowPlayingJob?.cancel()
         nowPlaying.stop()
+        launcherModel.stop()
+        shortcutsJob?.cancel()
         weatherJob?.cancel()
         timerJob?.cancel()
         portalStateJob?.cancel()
         portalState.stop()
+    }
+
+    // ---- Shortcuts ---------------------------------------------------------
+
+    private fun loadShortcuts() {
+        shortcutsJob?.cancel()
+        shortcutsJob = scope.launch { showShortcuts(launcherModel.shortcuts()) }
+    }
+
+    // Icons only, to keep them small over the pictures. The screensaver's views
+    // never see a touch, so there onScreensaverTap finds the icon by its tag.
+    private fun showShortcuts(shortcuts: List<PinnedShortcut>) {
+        shortcutsColumn.removeAllViews()
+        val density = context.resources.displayMetrics.density
+        val size = (SHORTCUT_ICON_DP * density).toInt()
+        val padding = (SHORTCUT_PADDING_DP * density).toInt()
+        // A framework attribute: the screensaver has no AppCompat theme
+        val ripple = TypedValue().also {
+            context.theme.resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, it, true)
+        }.resourceId
+        for (shortcut in shortcuts) {
+            val icon = ImageView(context).apply {
+                layoutParams = LinearLayout.LayoutParams(size + 2 * padding, size + 2 * padding)
+                setPadding(padding, padding, padding, padding)
+                setImageDrawable(shortcut.icon)
+                contentDescription = shortcut.label
+                tag = shortcut
+                if (ripple != 0) setBackgroundResource(ripple)
+                if (interactive) setOnClickListener { openShortcut(shortcut) }
+            }
+            shortcutsColumn.addView(icon)
+        }
+        shortcutsColumn.visibility = if (shortcuts.isEmpty()) View.GONE else View.VISIBLE
+    }
+
+    private fun openShortcut(shortcut: PinnedShortcut): Boolean {
+        Log.i(TAG, "Opening the shortcut ${shortcut.label}")
+        if (!launcherModel.launch(shortcut)) {
+            // Removed since the column was built
+            loadShortcuts()
+            return false
+        }
+        // As for the media panel: only the user's choice and the fixed list
+        if (HomeButtonApps(context).shouldShow(shortcut.packageName, detected = false)) {
+            HomeButtonService.show(context)
+        }
+        return true
     }
 
     // ---- Weather -----------------------------------------------------------
@@ -829,7 +898,12 @@ class SlideshowController(
     }
 
     private fun onScreensaverTap(e: MotionEvent) {
+        val shortcut = (0 until shortcutsColumn.childCount)
+            .map { shortcutsColumn.getChildAt(it) }
+            .firstOrNull { e.lands(it) }
+            ?.tag as? PinnedShortcut
         when {
+            shortcut != null && openShortcut(shortcut) -> return
             e.lands(nowPlayingPanel) && openMediaApp() -> return
             // Kept in the shared state, so the home screen shows it expanded
             e.lands(pictureInfo) -> state.infoExpanded = !state.infoExpanded
@@ -934,6 +1008,8 @@ class SlideshowController(
         const val FLING_VELOCITY_FACTOR = 4
         const val PAGE_ANIMATION_MS = 300L
         const val NOW_PLAYING_POLL_MILLIS = 5000L
+        const val SHORTCUT_ICON_DP = 48
+        const val SHORTCUT_PADDING_DP = 8
 
         const val NIGHT_CHECK_MILLIS = 30_000L
         const val NIGHT_FIRST_CHECK_MILLIS = 20_000L

@@ -82,6 +82,8 @@
     <string name="app_menu_app_info">App info</string>
     <string name="app_menu_uninstall">Uninstall</string>
     <string name="app_menu_remove_from_folder">Take out of folder</string>
+    <string name="app_menu_remove_shortcut">Remove shortcut</string>
+    <string name="shortcut_pinned">Added \"%1$s\" to AstroDock</string>
     <string name="folder_menu_rename">Rename folder</string>
     <string name="folder_menu_ungroup">Ungroup folder</string>
     <string name="folder_default_name">Folder</string>
@@ -99,6 +101,8 @@
     <string name="system_media_button">Open notification access</string>
 
     <string name="settings_category_weather">Weather</string>
+    <string name="settings_show_shortcuts">Show shortcuts over the pictures</string>
+    <string name="settings_show_shortcuts_hint">Pages and apps pinned to the home screen (such as Firefox\'s \"Add to Home screen\"), one tap away on the slideshow and the screensaver. The app list always shows them.</string>
     <string name="settings_weather_enabled">Show the weather</string>
     <string name="settings_weather_enabled_hint">Current temperature and sky over the clock, from Open-Meteo. Refreshed on the hour.</string>
     <string name="settings_weather_place">Place</string>

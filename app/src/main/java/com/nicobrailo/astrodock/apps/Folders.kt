@@ -2,7 +2,8 @@ package com.nicobrailo.astrodock.apps
 
 // Folders group apps in the app list. A folder holds the keys of the apps in it
 // (see LauncherApp.key), so it survives an app being updated, and apps that are
-// uninstalled simply drop out of it.
+// uninstalled simply drop out of it. Pinned shortcuts go in folders the same
+// way, by PinnedShortcut.key; to the rules here, they are apps too.
 data class Folder(val id: String, val name: String, val appKeys: List<String>)
 
 // Changing a list of folders. Pure functions, so the rules are easy to test:

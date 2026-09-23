@@ -101,19 +101,39 @@
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- What the Portal is doing; shown by tapping the clock -->
-    <TextView
-        android:id="@+id/debug"
+    <!-- Top left corner: the pinned shortcuts, and beside them the debug text -->
+    <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="top|start"
         android:layout_margin="24dp"
-        android:background="@drawable/status_background"
-        android:fontFamily="monospace"
-        android:padding="12dp"
-        android:textColor="@android:color/white"
-        android:textSize="14sp"
-        android:visibility="gone" />
+        android:orientation="horizontal">
+
+        <!-- The shortcuts other apps pinned (a web page from Firefox), as
+             icons, one tap away. SlideshowController fills it; hidden while
+             there are none. -->
+        <LinearLayout
+            android:id="@+id/shortcuts"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/status_background"
+            android:orientation="vertical"
+            android:padding="4dp"
+            android:visibility="gone" />
+
+        <!-- What the Portal is doing; shown by tapping the clock -->
+        <TextView
+            android:id="@+id/debug"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/status_background"
+            android:fontFamily="monospace"
+            android:padding="12dp"
+            android:textColor="@android:color/white"
+            android:textSize="14sp"
+            android:visibility="gone" />
+    </LinearLayout>
 
     <!-- What another app is playing, with controls. Hidden when nothing is. -->
     <LinearLayout

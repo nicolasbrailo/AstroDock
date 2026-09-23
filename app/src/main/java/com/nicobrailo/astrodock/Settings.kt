@@ -29,6 +29,9 @@ data class Settings(
     // A place name for Open-Meteo's geocoder, or "latitude, longitude"
     // (see weather/PlaceCache.kt)
     val weatherPlace: String,
+    // The shortcuts other apps pinned, as icons over the pictures (home screen
+    // and screensaver). The app list always shows them.
+    val showShortcuts: Boolean,
 ) {
     val showWeather: Boolean get() = weatherEnabled && weatherPlace.isNotBlank()
 
@@ -50,6 +53,7 @@ data class Settings(
         const val KEY_NIGHT_END_HOUR = "night_end_hour"
         const val KEY_WEATHER_ENABLED = "weather_enabled"
         const val KEY_WEATHER_PLACE = "weather_place"
+        const val KEY_SHOW_SHORTCUTS = "slideshow_shortcuts"
 
         const val DEFAULT_MAX_PICTURES = 20
         const val DEFAULT_PERCENT = 0
@@ -107,6 +111,7 @@ data class Settings(
                 nightEndHour = int(KEY_NIGHT_END_HOUR, DEFAULT_NIGHT_END_HOUR, HOUR_RANGE),
                 weatherEnabled = prefs.getBoolean(KEY_WEATHER_ENABLED, false),
                 weatherPlace = prefs.getString(KEY_WEATHER_PLACE, null)?.trim().orEmpty(),
+                showShortcuts = prefs.getBoolean(KEY_SHOW_SHORTCUTS, true),
             )
         }
     }

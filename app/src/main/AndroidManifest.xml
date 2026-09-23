@@ -148,6 +148,21 @@
             android:name=".SettingsActivity"
             android:exported="false"
             android:parentActivityName=".SlideshowActivity" />
+
+        <!-- Takes the shortcuts other apps pin to the home screen, such as a
+             page Firefox adds. Exported because the system starts it; a request
+             that didn't come from the system is ignored. Invisible, and gone
+             as soon as it has accepted the request. -->
+        <activity
+            android:name=".PinShortcutActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.content.pm.action.CONFIRM_PIN_SHORTCUT" />
+            </intent-filter>
+        </activity>
     </application>
 
 </manifest>

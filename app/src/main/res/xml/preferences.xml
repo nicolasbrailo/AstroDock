@@ -41,6 +41,11 @@
             app:min="5"
             app:seekBarIncrement="5"
             app:showSeekBarValue="true" />
+        <SwitchPreferenceCompat
+            app:key="slideshow_shortcuts"
+            app:title="@string/settings_show_shortcuts"
+            app:summary="@string/settings_show_shortcuts_hint"
+            app:defaultValue="true" />
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/settings_category_albums">

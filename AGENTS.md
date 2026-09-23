@@ -3,9 +3,9 @@
 Android app for a Facebook Portal Go (Android 10, API 29, arm64, 1280x800, no
 Google Play Services). It shows a full screen slideshow of random pictures from
 an [Immich](https://immich.app) server. Tapping the slideshow opens a list of
-apps to launch. The long-term goal is to use it as the device's home screen; it
-isn't registered as one yet (no `CATEGORY_HOME` intent filter), so for now it
-is started like any other app.
+apps to launch. It is the device's home screen: it declares `CATEGORY_HOME`,
+and `tools/setup-device.sh` makes it the default, which the pinned shortcuts
+(see `PinShortcutActivity`) depend on.
 
 This file is the shared context for AI assistants (Gemini in Android Studio
 reads `AGENTS.md`; Claude Code reads `CLAUDE.md`, which imports this file). Keep
@@ -353,6 +353,16 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   than `queryIntentActivities`, so other profiles are included, icons carry the
   profile badge, and the system reports installs and removals while the list is
   open. It also launches apps and opens their app info.
+- `PinShortcutActivity.kt`: accepts the shortcuts other apps pin to the home
+  screen, such as a page Firefox adds with "Add to Home screen" (or "Install",
+  for a site that can run as an app). Android only offers that in an app while
+  the default home app has an activity for `CONFIRM_PIN_SHORTCUT`. It accepts
+  without asking, since the user just asked in the other app, and shows a
+  toast. Android keeps the shortcuts, not us: `LauncherModel.shortcuts()`
+  lists them (`FLAG_MATCH_PINNED`), `launch` starts one and `unpin` pins the
+  rest of that app's. Only the default home app may do any of that, so
+  anywhere else the list is empty. `LauncherModel`'s callback reports them
+  changing (`onShortcutsChanged`) like it does apps.
 - `apps/Folders.kt`: the folder rules as pure functions (`FolderOps`), so they
   can be unit tested. An app is in at most one folder, and a folder with fewer
   than two apps dissolves.
@@ -426,6 +436,13 @@ documents the API). Keep the two behaving the same.
   loading it failed, the tick retries instead. Every swipe restarts the timer,
   which then moves forward from wherever the user is, including from inside
   the history.
+- The top left corner shows the pinned shortcuts as a column of icons (no
+  labels, to keep it small over the pictures), and tapping one opens it, in
+  the screensaver too (`onScreensaverTap` finds the icon by its tag). The debug
+  text goes beside them. At night they are under the cover like the rest. The
+  Slideshow tab can turn the column off (`showShortcuts`, on by default), which
+  covers both the home screen and the screensaver; the app list always shows
+  them.
 - Tapping the screen opens `AppListActivity`. There's deliberately no
   long-press action: long-press fires when a swipe starts slowly.
 - The bottom left corner shows a clock (`TextClock`, always `HH:mm`) and a
@@ -470,8 +487,13 @@ documents the API). Keep the two behaving the same.
 
 **App list** (`AppListActivity`).
 - It shows every activity with `ACTION_MAIN` + `CATEGORY_LAUNCHER`, except this
-  app, sorted by label. The `<queries>` element in the manifest makes those
-  activities visible on Android 11+.
+  app, and the pinned shortcuts, sorted by label. The `<queries>` element in
+  the manifest makes those activities visible on Android 11+. Shortcuts go in
+  folders like apps (by `PinnedShortcut.key`), and their long-press menu
+  removes them (unpins) or, inside a folder, takes them out of it. A folder
+  only drops a shortcut it can't find while AstroDock can read shortcuts at
+  all: when it isn't the default home app the list is empty, which says
+  nothing about what was removed.
 - The list reloads in `onStart()`, so installed and removed apps show up.
 - Tapping an app launches it in a new task and closes the list, so Back from
   the app returns to the slideshow.
@@ -492,7 +514,8 @@ documents the API). Keep the two behaving the same.
 
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album
-(default 0 = all) and seconds per picture (default 30). Under "Album filter", the
+(default 0 = all), seconds per picture (default 30) and whether to show the
+pinned shortcuts over the pictures (default on). Under "Album filter", the
 `AlbumFilter`: the album names to show and the ones to leave out (comma
 separated, `*` and `?` are wildcards, matching the whole name, case
 insensitive), and a year range (0 at either end means no limit; an album the
