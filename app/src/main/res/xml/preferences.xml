@@ -23,12 +23,15 @@
             app:dialogMessage="@string/settings_max_pictures_hint"
             app:defaultValue="20"
             app:useSimpleSummaryProvider="true" />
-        <EditTextPreference
+        <SeekBarPreference
+            android:max="100"
             app:key="percent_of_album"
             app:title="@string/settings_percent"
-            app:dialogMessage="@string/settings_percent_hint"
+            app:summary="@string/settings_percent_hint"
             app:defaultValue="0"
-            app:useSimpleSummaryProvider="true" />
+            app:min="0"
+            app:seekBarIncrement="5"
+            app:showSeekBarValue="true" />
         <SeekBarPreference
             android:max="300"
             app:key="slide_seconds"
@@ -95,19 +98,11 @@
             app:title="@string/settings_night_screen_off"
             app:summary="@string/settings_night_screen_off_hint"
             app:defaultValue="false" />
-        <EditTextPreference
-            app:key="night_start_hour"
-            app:title="@string/settings_night_start"
-            app:dialogMessage="@string/settings_night_hour_hint"
-            app:defaultValue="0"
-            app:dependency="night_screen_off"
-            app:useSimpleSummaryProvider="true" />
-        <EditTextPreference
-            app:key="night_end_hour"
-            app:title="@string/settings_night_end"
-            app:dialogMessage="@string/settings_night_hour_hint"
-            app:defaultValue="6"
-            app:dependency="night_screen_off"
-            app:useSimpleSummaryProvider="true" />
+        <!-- Stores night_start_hour and night_end_hour, so it has no key of
+             its own that Settings.kt reads -->
+        <com.nicobrailo.astrodock.NightHoursPreference
+            app:key="night_hours"
+            app:title="@string/settings_night_hours"
+            app:dependency="night_screen_off" />
     </PreferenceCategory>
 </PreferenceScreen>

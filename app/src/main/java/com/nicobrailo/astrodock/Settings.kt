@@ -60,10 +60,10 @@ data class Settings(
 
         // Valid values of each numeric setting; SettingsActivity rejects the rest
         val MAX_PICTURES_RANGE = 0..100_000
-        val PERCENT_RANGE = 0..100
         // 0 means that end of the album filter's range is open
         val YEAR_RANGE = 0..9999
         // The sliders' ranges; see res/xml/preferences.xml for their steps
+        val PERCENT_RANGE = 0..100
         val SLIDE_SECONDS_RANGE = 5..300
         val SCREEN_OFF_MINUTES_RANGE = 0..30
         val HOUR_RANGE = 0..23
@@ -91,7 +91,7 @@ data class Settings(
                 serverUrl = prefs.getString(KEY_SERVER_URL, null)?.trim().orEmpty(),
                 apiKey = prefs.getString(KEY_API_KEY, null)?.trim().orEmpty(),
                 maxPicturesPerAlbum = int(KEY_MAX_PICTURES, DEFAULT_MAX_PICTURES, MAX_PICTURES_RANGE),
-                percentOfAlbum = int(KEY_PERCENT, DEFAULT_PERCENT, PERCENT_RANGE),
+                percentOfAlbum = slider(KEY_PERCENT, DEFAULT_PERCENT, PERCENT_RANGE),
                 albumFilter = AlbumFilter(
                     include = prefs.getString(KEY_ALBUM_INCLUDE, null)?.trim().orEmpty(),
                     exclude = prefs.getString(KEY_ALBUM_EXCLUDE, null)?.trim().orEmpty(),

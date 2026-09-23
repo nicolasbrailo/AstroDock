@@ -97,7 +97,7 @@ while [[ $# -gt 0 ]]; do
     --api-key) set_pref api_key "$2"; shift 2 ;;
     --max-pictures)
       number "$2" "$1" 0 100000; set_pref max_pictures_per_album "$2"; shift 2 ;;
-    --percent) number "$2" "$1" 0 100; set_pref percent_of_album "$2"; shift 2 ;;
+    --percent) number "$2" "$1" 0 100; set_pref percent_of_album "$2" int; shift 2 ;;
     --slide-seconds) number "$2" "$1" 5 300; set_pref slide_seconds "$2" int; shift 2 ;;
     --album-include) set_pref album_name_include "$2"; shift 2 ;;
     --album-exclude) set_pref album_name_exclude "$2"; shift 2 ;;

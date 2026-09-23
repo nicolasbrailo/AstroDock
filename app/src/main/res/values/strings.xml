@@ -13,7 +13,7 @@
     <string name="settings_max_pictures">Max pictures per album</string>
     <string name="settings_max_pictures_hint">At most this many pictures from each album. 0 means no limit.</string>
     <string name="settings_percent">Percent of each album</string>
-    <string name="settings_percent_hint">Show this percentage (0–100) of each album\'s pictures, then apply the max above. 0 means all of them.</string>
+    <string name="settings_percent_hint">Show this percentage of each album\'s pictures, then apply the max above. 0 means all of them.</string>
     <string name="settings_slide_seconds">Seconds per picture</string>
     <string name="settings_slide_seconds_hint">Seconds each picture stays on screen</string>
     <string name="settings_category_albums">Album filter</string>
@@ -114,9 +114,8 @@
     <string name="settings_night_screen_off">Turn the screen off at night</string>
     <string name="settings_night_screen_off_hint">Keeps the screen dark during the hours below: switched off, or black and dimmed while the Portal keeps waking it because someone is in the room. A touch brings the pictures back for a few minutes. Needs \"Turn the screen off\" in the System tab.</string>
     <string name="settings_night_screen_off_no_admin">Not available: AstroDock has no permission to turn the screen off. Grant \"Turn the screen off\" in the System tab, or on a Portal, run tools/setup-device.sh.</string>
-    <string name="settings_night_start">Night starts at (hour)</string>
-    <string name="settings_night_end">Night ends at (hour)</string>
-    <string name="settings_night_hour_hint">Hour of the day, 0 to 23</string>
+    <string name="settings_night_hours">Night hours</string>
+    <string name="settings_night_hours_summary">From %1$s to %2$s</string>
 
     <string name="home_button_description">Home</string>
     <string name="home_button_channel">Home button</string>

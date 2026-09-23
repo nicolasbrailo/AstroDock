@@ -76,11 +76,8 @@ class SettingsActivity : AppCompatActivity() {
             }
 
             numberPreference(Settings.KEY_MAX_PICTURES, Settings.MAX_PICTURES_RANGE)
-            numberPreference(Settings.KEY_PERCENT, Settings.PERCENT_RANGE)
             numberPreference(Settings.KEY_ALBUM_FROM_YEAR, Settings.YEAR_RANGE)
             numberPreference(Settings.KEY_ALBUM_TO_YEAR, Settings.YEAR_RANGE)
-            numberPreference(Settings.KEY_NIGHT_START_HOUR, Settings.HOUR_RANGE)
-            numberPreference(Settings.KEY_NIGHT_END_HOUR, Settings.HOUR_RANGE)
             placePreference()
         }
 
@@ -108,8 +105,9 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         // Shows a numeric keyboard and rejects values outside range. The
-        // sliders in the Screen section need none of this: they can only be
-        // moved within their own range.
+        // sliders (percent of each album, seconds per picture, the Screen
+        // section's and NightHoursPreference) need none of this: they can
+        // only be moved within their own range.
         private fun numberPreference(key: String, range: IntRange) {
             val pref = findPreference<EditTextPreference>(key) ?: return
             pref.setOnBindEditTextListener { it.inputType = InputType.TYPE_CLASS_NUMBER }

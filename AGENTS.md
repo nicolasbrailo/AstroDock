@@ -83,12 +83,21 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
 - `PictureDescription.kt`: turns metadata into the slideshow's overlay text.
 - `PictureHistory.kt`: the pictures the user can swipe back through.
 - `Settings.kt`: settings stored in SharedPreferences: keys, defaults and valid
-  ranges. Seconds per picture and the screen-off delay are sliders
-  (`SeekBarPreference`), which store an int, so `load()` converts the string a
-  text input would have left behind the first time it reads one.
+  ranges. Percent of each album, seconds per picture and the screen-off delay
+  are sliders (`SeekBarPreference`), which store an int, so `load()` converts
+  the string a text input would have left behind the first time it reads one.
 - `SettingsActivity.kt` + `res/layout/activity_settings.xml`: settings with two
   tabs. The Slideshow tab is the preferences in `res/xml/preferences.xml`, whose
   keys must match `Settings.KEY_*`.
+- `NightHoursPreference.kt` + `res/layout/preference_night_hours.xml`: the
+  night hours as one `RangeSlider` with a knob for each end. It still stores
+  them as the strings `night_start_hour` and `night_end_hour` the text inputs
+  it replaced left behind, so `Settings.load()` didn't change. A night usually
+  wraps past midnight, which two knobs on a 0 to 23 scale can't show, so the
+  scale runs from 12:00 to 11:00 the next day (`NightHours`, unit tested), and
+  the start knob then can't pass the end one; they stay at least an hour
+  apart. The price is that a window including noon can't be set, and a stored
+  one (from before, or pushed over adb) is shown as the defaults.
 - `media/NowPlaying.kt` + `media/MediaListenerService.kt`: what another app is
   playing, and the controls for it, through `MediaSessionManager`. Reading it
   needs notification access, which is granted to the (otherwise empty)
@@ -474,8 +483,8 @@ place to show it for: a town or city, with a comma and the region or country
 if several share the name, or "latitude, longitude". Empty hides the panel.
 Changing any of it leaves the pictures alone. Under "Screen": how long
 after the Portal last saw someone the screen switches off (a slider, 0 leaves
-the system's value alone) and an opt-in "turn the screen off at night" with its hours
-(default 00:00 to 06:00, off). Without the device admin ("Turn the screen
+the system's value alone) and an opt-in "turn the screen off at night" with its hours,
+a slider with two knobs (default 00:00 to 06:00, off). Without the device admin ("Turn the screen
 off" in the System tab) the night rule can't do anything, so its switch and
 hours are greyed out and the reason is shown in red; this is checked every
 time the tab is resumed, so granting it enables them. The red doesn't show on
