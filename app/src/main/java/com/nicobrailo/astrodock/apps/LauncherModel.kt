@@ -74,9 +74,24 @@ class LauncherModel(private val context: Context, private val onChanged: () -> U
             onChanged()
     }
 
-    fun start() = launcherApps?.registerCallback(callback) ?: Unit
+    private var registered = false
 
-    fun stop() = launcherApps?.unregisterCallback(callback) ?: Unit
+    fun start() {
+        if (registered) return
+        launcherApps?.registerCallback(callback)
+        registered = true
+    }
+
+    // Must not unregister twice. LauncherApps asks the system to drop its
+    // listener whenever it has no callbacks left, even if this one was never
+    // there, and once no app in the system is listening that throws "Not
+    // registered" from system_server. The screensaver stops the slideshow both
+    // when dreaming stops and when its window goes, which crashed the app.
+    fun stop() {
+        if (!registered) return
+        registered = false
+        launcherApps?.unregisterCallback(callback)
+    }
 
     // Every launchable app in every profile, except this launcher, sorted by
     // name. Loading labels and icons reads each app's resources, so not on the
