@@ -1,7 +1,10 @@
 package com.nicobrailo.astrodock.mqtt
 
+import android.annotation.SuppressLint
+import android.bluetooth.BluetoothAdapter
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import android.provider.Settings as AndroidSettings
 import androidx.preference.PreferenceManager
 import java.util.UUID
@@ -36,8 +39,10 @@ data class MqttSettings(
         const val DEFAULT_PORT = 1883
         val PORT_RANGE = 1..65535
 
-        // Identifies this device on the broker. Generated once and kept, so it
-        // survives reinstalls of nothing but stays stable while installed.
+        private const val TAG = "MqttSettings"
+
+        // Identifies this device on the broker when there is no ANDROID_ID.
+        // Generated once and kept, so it only survives while installed.
         private const val KEY_MACHINE_ID = "mqtt_machine_id"
 
         fun load(context: Context): MqttSettings {
@@ -66,12 +71,41 @@ data class MqttSettings(
             return if (trimmed.endsWith("/")) trimmed else "$trimmed/"
         }
 
-        // What the device calls itself ("PortalGo"), which is how it should
-        // show up on the broker: "astrodock" is the software, not the unit
+        // The name the user gave the device, which is how it should show up on
+        // the broker: "astrodock" is the software, not the unit. On a Portal
+        // that is the Bluetooth name ("Portaloft Portal"), since setup stores
+        // what was typed there; the global device_name is only the model
+        // ("PortalGo"), the same on every Portal Go, so two of them would
+        // share a topic prefix.
         fun systemName(context: Context): String =
-            AndroidSettings.Global.getString(context.contentResolver, "device_name")
-                ?.takeIf { it.isNotBlank() }
+            bluetoothName(context)
+                ?: AndroidSettings.Global.getString(context.contentResolver, "device_name")
+                    ?.takeIf { it.isNotBlank() }
                 ?: Build.MODEL
+
+        // The adapter answers even with Bluetooth off, from the same setting
+        // read below. Reading the setting directly needs no permission, but
+        // it isn't public API, and Android 12 stopped letting apps read such
+        // keys, so it's only the fallback. From Android 12 the adapter needs
+        // a runtime permission we don't ask for, which lands here as a
+        // SecurityException.
+        @SuppressLint("MissingPermission")
+        private fun bluetoothName(context: Context): String? {
+            val fromAdapter = try {
+                @Suppress("DEPRECATION")
+                BluetoothAdapter.getDefaultAdapter()?.name
+            } catch (e: SecurityException) {
+                Log.i(TAG, "Can't read the Bluetooth name", e)
+                null
+            }
+            fromAdapter?.takeIf { it.isNotBlank() }?.let { return it }
+            return try {
+                AndroidSettings.Secure.getString(context.contentResolver, "bluetooth_name")
+                    ?.takeIf { it.isNotBlank() }
+            } catch (e: SecurityException) {
+                null
+            }
+        }
 
         fun defaultTopicPrefix(context: Context): String = "${topicName(systemName(context))}/"
 
@@ -94,7 +128,15 @@ data class MqttSettings(
             .trim('-')
             .ifEmpty { "portal" }
 
+        // Tells this device's records on the broker from anyone else's (see
+        // StateReporter's check for a taken prefix). ANDROID_ID is per device
+        // and signing key, so it survives reinstalls, which a generated id
+        // doesn't: a reinstalled device would find its own old record and
+        // take it for someone else's.
         fun machineId(context: Context): String {
+            AndroidSettings.Secure.getString(context.contentResolver, AndroidSettings.Secure.ANDROID_ID)
+                ?.takeIf { it.isNotBlank() }
+                ?.let { return it }
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
             prefs.getString(KEY_MACHINE_ID, null)?.let { return it }
             val id = UUID.randomUUID().toString()

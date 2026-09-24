@@ -259,9 +259,24 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   places and they hand over in either order, so each reports itself by name and
   `slideshow_active` is true while either is showing, and false while the
   night rule has it covered in black. The topic prefix and the client id default
-  to the device's own name (`device_name`, e.g. `portalgo/`), sanitised for
-  topics: "astrodock" is the software, the unit is the Portal. Each device needs
-  its own prefix, or they overwrite each other's retained topics.
+  to the name the device was given at setup, sanitised for topics (e.g.
+  `portaloft-portal/`): "astrodock" is the software, the unit is the Portal.
+  The Portal's setup keeps that name only as the Bluetooth name (the secure
+  `bluetooth_name`, with " Portal" added to what was typed), and the global
+  `device_name` is just the model, `PortalGo` on every one of them, so
+  `MqttSettings.systemName` reads the Bluetooth name (`BluetoothAdapter`, then
+  the setting) and only falls back to `device_name`. Each device needs its own
+  prefix, or they overwrite each other's retained topics, so before connecting
+  (`prefixIsFree`) the reporter reads the retained `state/bridge`, on a
+  connection of its own with no last will, and if it holds another
+  `machine_id` it stays off the broker and shows why in the alert corner. It
+  doesn't try those settings again until they change or the app restarts. An
+  empty record is free: `mosquitto_pub -r -n -t <prefix>state/bridge` hands a
+  prefix over. `machine_id` is `ANDROID_ID` (a generated UUID only without
+  one), because it has to survive a reinstall: a device with a new id would
+  find its own old record and refuse its own name. When testing it, stop the
+  app before publishing a fake record: its last will replaces the fake when
+  the process dies.
 - `SystemSettingsFragment.kt`: the System tab. At the top, a list of what is
   missing and what doesn't work without it (each `Item`'s `missing`), then a
   note to run `tools/setup-device.sh`, which grants all of it; "Everything is

@@ -14,6 +14,13 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <!-- Keeps the screen on while an install is in progress -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Reads the Bluetooth name, which is the name the user gave the device
+         and so its MQTT topic prefix. Granted at install up to Android 11;
+         later versions need BLUETOOTH_CONNECT at runtime, and MqttSettings
+         reads the setting behind it instead. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
 
     <!-- Sets how long the Portal waits before starting the screensaver. It only
          works once the user allows it in the System tab: Settings.System.canWrite()

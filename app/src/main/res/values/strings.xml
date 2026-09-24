@@ -31,6 +31,8 @@
     <string name="mqtt_alert_connect">Can\'t reach the MQTT broker at %1$s:%2$d\n%3$s</string>
     <string name="mqtt_alert_no_answer">No answer from the MQTT broker at %1$s:%2$d\nSomething is listening there, but it isn\'t answering as a broker. Check the port.</string>
     <string name="mqtt_alert_lost">Lost the MQTT broker at %1$s:%2$d\n%3$s</string>
+    <string name="mqtt_alert_prefix_taken">Not connecting to the MQTT broker: the topic prefix %1$s belongs to another device (%2$s)\nGive this device its own prefix in the MQTT tab, or, if that device is gone, clear its record with mosquitto_pub -r -n -t %3$s</string>
+    <string name="mqtt_prefix_owner_unknown">it doesn\'t say which</string>
     <string name="mqtt_alert_subscribe">Connected to the MQTT broker, but can\'t subscribe to its commands\n%1$s</string>
     <string name="announce_audio_default_msg">Audio announcement in progress</string>
     <string name="announce_audio_fetch_failed">Received audio announce request but couldn\'t fetch \"%1$s\"\n%2$s</string>
@@ -166,9 +168,9 @@
     <string name="mqtt_password">Password</string>
     <string name="mqtt_category_topics">Topics</string>
     <string name="mqtt_topic_prefix">Topic prefix</string>
-    <string name="mqtt_topic_prefix_hint">Everything is published under this prefix. A trailing / is added if missing. Empty means this device\'s name. Give each device its own prefix, or they overwrite each other.</string>
+    <string name="mqtt_topic_prefix_hint">Everything is published under this prefix. A trailing / is added if missing. Empty means this device\'s Bluetooth name, which is the name it was given at setup. Give each device its own prefix, or they overwrite each other.</string>
     <string name="mqtt_client_id">Client ID</string>
-    <string name="mqtt_client_id_hint">How this device identifies itself to the broker. Empty means this device\'s name.</string>
+    <string name="mqtt_client_id_hint">How this device identifies itself to the broker. Empty means this device\'s Bluetooth name.</string>
     <string name="mqtt_topics">Published topics</string>
     <string name="mqtt_category_commands">Commands</string>
     <string name="mqtt_audio_announcements">Play audio announcements</string>

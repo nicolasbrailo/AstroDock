@@ -29,6 +29,7 @@ import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken
 import org.eclipse.paho.client.mqttv3.IMqttToken
 import org.eclipse.paho.client.mqttv3.MqttAsyncClient
 import org.eclipse.paho.client.mqttv3.MqttCallbackExtended
+import org.eclipse.paho.client.mqttv3.MqttClient
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions
 import org.eclipse.paho.client.mqttv3.MqttException
 import org.eclipse.paho.client.mqttv3.MqttMessage
@@ -40,6 +41,9 @@ import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.time.Instant
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 
 // Publishes what this device is doing to an MQTT broker, following the
 // homeboard bridge's topics (see its README):
@@ -83,6 +87,13 @@ class StateReporter private constructor(private val context: Context) {
     private var settings: MqttSettings? = null
     private var occupancyJob: Job? = null
     private var connectWatchdog: Job? = null
+    // Checking the prefix and then connecting (see prefixIsFree)
+    private var connectJob: Job? = null
+    // Settings whose prefix another device turned out to own. They aren't
+    // tried again, since that would only find the same device again: changing
+    // them, or restarting the app, does.
+    @Volatile
+    private var refused: MqttSettings? = null
     private var watchingScreen = false
     // A failure shows up the same way as a text announcement, on whichever
     // slideshow is on screen
@@ -117,7 +128,8 @@ class StateReporter private constructor(private val context: Context) {
     // effect without a restart.
     fun applySettings() {
         val newSettings = MqttSettings.load(context)
-        if (newSettings == settings && client?.isConnected == true) return
+        if (newSettings == settings && (client?.isConnected == true || connectJob?.isActive == true)) return
+        if (newSettings == refused) return
         settings = newSettings
         disconnect()
         if (!newSettings.isConfigured) {
@@ -126,7 +138,11 @@ class StateReporter private constructor(private val context: Context) {
         }
 
         watchScreen()
-        scope.launch { connect(newSettings) }
+        connectJob = scope.launch {
+            // Settings that changed while this was checking have a check of
+            // their own under way
+            if (prefixIsFree(newSettings) && settings === newSettings) connect(newSettings)
+        }
     }
 
     // Set by the slideshow that is on screen; the screensaver and the home
@@ -217,16 +233,96 @@ class StateReporter private constructor(private val context: Context) {
         publish("state/displayed_photo", photo)
     }
 
-    private fun connect(settings: MqttSettings) {
-        val options = MqttConnectOptions().apply {
-            isCleanSession = true
-            isAutomaticReconnect = true
-            connectionTimeout = CONNECT_TIMEOUT_SECONDS
-            keepAliveInterval = KEEPALIVE_SECONDS
-            if (settings.user.isNotBlank()) {
-                userName = settings.user
-                password = settings.password.toCharArray()
+    private fun connectOptions(settings: MqttSettings) = MqttConnectOptions().apply {
+        isCleanSession = true
+        connectionTimeout = CONNECT_TIMEOUT_SECONDS
+        keepAliveInterval = KEEPALIVE_SECONDS
+        if (settings.user.isNotBlank()) {
+            userName = settings.user
+            password = settings.password.toCharArray()
+        }
+    }
+
+    // Two devices under one prefix overwrite each other's retained records and
+    // both carry out every command, so before publishing anything we read the
+    // retained state/bridge record: one with another machine_id means another
+    // device has this prefix, and we stay off the broker and say so. An empty
+    // or missing record is free, which is also how to hand a prefix over.
+    //
+    // It looks on a connection of its own, with no last will: the real
+    // connection carries our offline record as its will, and if that
+    // connection dropped while we looked, the broker would publish it over
+    // the other device's record.
+    //
+    // Blocks, so it runs on the scope. False also when the broker can't be
+    // reached, which it reports the same way connect() would.
+    private fun prefixIsFree(settings: MqttSettings): Boolean {
+        val topic = settings.topicPrefix + "state/bridge"
+        val probe = try {
+            MqttClient("tcp://${settings.host}:${settings.port}", "${settings.clientId}-check", MemoryPersistence())
+        } catch (e: MqttException) {
+            Log.w(TAG, "Can't connect to ${settings.host}:${settings.port}", e)
+            cantConnect(settings, e)
+            return false
+        }
+        // Covers the CONNACK too, which connectionTimeout doesn't (see
+        // watchConnect)
+        probe.timeToWait = CONNECT_GIVE_UP_MILLIS
+        val retained = CompletableFuture<ByteArray>()
+        try {
+            probe.connect(connectOptions(settings))
+            probe.subscribe(topic, QOS) { _, message ->
+                if (message.isRetained) retained.complete(message.payload)
             }
+            // The broker sends a retained message straight after the
+            // subscription, so a short wait is enough to say there is none
+            val record = try {
+                retained.get(RETAINED_WAIT_MILLIS, TimeUnit.MILLISECONDS)
+            } catch (e: TimeoutException) {
+                null
+            }
+            val owner = otherOwner(record) ?: return true
+            Log.w(TAG, "${settings.topicPrefix} belongs to $owner, not connecting")
+            refused = settings
+            setAlert(context.getString(R.string.mqtt_alert_prefix_taken, settings.topicPrefix, owner, topic))
+            return false
+        } catch (e: MqttException) {
+            Log.w(TAG, "Can't check ${settings.host}:${settings.port} for $topic", e)
+            if (e.reasonCode == MqttException.REASON_CODE_CLIENT_TIMEOUT.toInt()) {
+                setAlert(context.getString(R.string.mqtt_alert_no_answer, settings.host, settings.port))
+            } else {
+                cantConnect(settings, e)
+            }
+            return false
+        } finally {
+            try {
+                if (probe.isConnected) probe.disconnect() else probe.disconnectForcibly(0, 0)
+                probe.close()
+            } catch (e: MqttException) {
+                Log.w(TAG, "Can't close the check's connection", e)
+            }
+        }
+    }
+
+    // Who a retained state/bridge record says it belongs to, as its hostname
+    // or machine id, or null if it is ours or nobody's. A record that doesn't
+    // say whose it is still means some device publishes there.
+    private fun otherOwner(record: ByteArray?): String? {
+        if (record == null || record.isEmpty()) return null
+        val json = try {
+            JSONObject(String(record))
+        } catch (e: JSONException) {
+            return context.getString(R.string.mqtt_prefix_owner_unknown)
+        }
+        val machineId = json.optString("machine_id")
+        if (machineId == MqttSettings.machineId(context)) return null
+        return json.optString("hostname").ifBlank { machineId }
+            .ifBlank { context.getString(R.string.mqtt_prefix_owner_unknown) }
+    }
+
+    private fun connect(settings: MqttSettings) {
+        val options = connectOptions(settings).apply {
+            isAutomaticReconnect = true
             // Latched at connect time: the broker publishes this if we vanish
             setWill(
                 settings.topicPrefix + "state/bridge",
@@ -342,6 +438,7 @@ class StateReporter private constructor(private val context: Context) {
     private fun disconnect() {
         occupancyJob?.cancel()
         connectWatchdog?.cancel()
+        connectJob?.cancel()
         val old = client ?: return
         client = null
         scope.launch {
@@ -537,7 +634,7 @@ class StateReporter private constructor(private val context: Context) {
         val payload = JSONObject()
             .put("state", if (online) "online" else "offline")
             .put("machine_id", MqttSettings.machineId(context))
-            .put("hostname", hostname())
+            .put("hostname", MqttSettings.systemName(context))
             .put("host_model", "${Build.MANUFACTURER} ${Build.MODEL}")
             .put("started_at", startedAt)
         if (!online) return payload
@@ -546,10 +643,6 @@ class StateReporter private constructor(private val context: Context) {
             .put("ip", ipAddress() ?: JSONObject.NULL)
             .put("app", "astrodock")
     }
-
-    private fun hostname(): String =
-        AndroidSettings.Global.getString(context.contentResolver, "device_name")?.takeIf { it.isNotBlank() }
-            ?: Build.MODEL
 
     // The address of whichever interface is carrying traffic; there's no
     // hostname resolution on the device to ask instead
@@ -590,6 +683,9 @@ class StateReporter private constructor(private val context: Context) {
         private const val CONNECT_TIMEOUT_SECONDS = 10
         // Twice the above, since that only covers opening the socket
         private const val CONNECT_GIVE_UP_MILLIS = 20_000L
+        // How long the prefix check waits for a retained record after
+        // subscribing, before deciding there is none
+        private const val RETAINED_WAIT_MILLIS = 2_000L
         private const val OCCUPANCY_REFRESH_MILLIS = 60_000L
         // How long force_on holds the screen before the usual timeouts resume
         private const val FORCE_ON_MILLIS = 30 * 60 * 1000L
