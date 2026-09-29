@@ -5,8 +5,10 @@
 #
 # Usage: tools/setup-device.sh
 #
-# It makes astrodock the home screen and the screensaver, lets it write the
-# secure setting that decides when the screen switches off, hides the Portal's
+# It makes astrodock the home screen and the screensaver, puts back the
+# Portal's own screensaver and screen-off delays (which older versions of the
+# app overwrote), lets it write the secure setting behind high contrast text
+# (see below), hides the Portal's
 # floating bug-report pill, turns off the Portal's app verifier, which only
 # accepts apps signed by Facebook and fails every other install with "App
 # certificate rejected" (adb installs are never verified), makes the system's
@@ -14,7 +16,7 @@
 # the notification access the media controls need and the device admin that
 # turns the screen off at night, which on the Portal only adb can do (see
 # below). It also grants the permissions the System tab could ask for on the
-# device (changing system settings, drawing over other apps, installing apps),
+# device (drawing over other apps, installing apps),
 # so one run leaves that tab with nothing missing.
 # To undo any of it:
 #
@@ -27,7 +29,6 @@
 #   adb shell settings put secure high_text_contrast_enabled 0
 #   adb shell cmd notification disallow_listener \
 #     com.nicobrailo.astrodock/com.nicobrailo.astrodock.media.MediaListenerService
-#   adb shell appops set com.nicobrailo.astrodock WRITE_SETTINGS default
 #   adb shell appops set com.nicobrailo.astrodock SYSTEM_ALERT_WINDOW default
 #   adb shell appops set com.nicobrailo.astrodock REQUEST_INSTALL_PACKAGES default
 #
@@ -67,9 +68,14 @@ adb shell cmd package set-home-activity "$PKG/.SlideshowActivity" >/dev/null
 adb shell settings put secure screensaver_components "$PKG/.SlideshowDreamService"
 adb shell settings put secure screensaver_enabled 1
 
-# sleep_timeout (how long after the Portal last saw someone the screen goes
-# off) is a secure setting. This grant lets the app keep it at whatever the
-# Slideshow tab says, which matters because the Portal resets it on its own.
+# The Portal decides when the screensaver starts and when the screen goes
+# off. Older versions of the app wrote their own values here, and nothing else
+# puts the Portal's back, so this does.
+adb shell settings put system screen_off_timeout 300000
+adb shell settings put secure sleep_timeout 1200000
+
+# Secure settings, for the high contrast text below: the System tab can switch
+# it, but only with this grant.
 adb shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS
 # Notification access, which is what lets the slideshow read and control what
 # another app is playing. The System tab has a button for it, but the screen it
@@ -86,9 +92,8 @@ adb shell cmd notification allow_listener \
 # the same grant from adb works. Setting it again when it is already active is
 # harmless.
 adb shell dpm set-active-admin "$PKG/.ScreenAdminReceiver" >/dev/null
-# These three have screens on the device, but granting them here saves the
+# These two have screens on the device, but granting them here saves the
 # taps. They are app-ops, which is what those screens set.
-adb shell appops set "$PKG" WRITE_SETTINGS allow
 adb shell appops set "$PKG" SYSTEM_ALERT_WINDOW allow
 adb shell appops set "$PKG" REQUEST_INSTALL_PACKAGES allow
 
@@ -114,7 +119,7 @@ echo "portal theme:     $(adb shell cmd overlay list | tr -d '\r' | grep "$THEME
 echo "high contrast:    $(adb shell settings get secure high_text_contrast_enabled | tr -d '\r') (1 outlines every string, so none can vanish)"
 echo "screen off admin: $(adb shell dumpsys device_policy | tr -d '\r' \
   | grep -q "$PKG/.ScreenAdminReceiver" && echo "granted" || echo "MISSING") (night screen off)"
-for op in WRITE_SETTINGS SYSTEM_ALERT_WINDOW REQUEST_INSTALL_PACKAGES; do
+for op in SYSTEM_ALERT_WINDOW REQUEST_INSTALL_PACKAGES; do
   printf '%-18s%s\n' "$op:" "$(adb shell appops get "$PKG" "$op" | tr -d '\r' | head -1)"
 done
 echo "media controls:   $(adb shell settings get secure enabled_notification_listeners \

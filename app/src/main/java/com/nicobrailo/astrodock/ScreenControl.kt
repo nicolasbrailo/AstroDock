@@ -5,45 +5,22 @@ import android.app.admin.DevicePolicyManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.PowerManager
-import android.provider.Settings as AndroidSettings
+import android.os.SystemClock
 import android.util.Log
 
-// The two bits of screen behaviour the app is allowed to control.
+// What the app does to the screen, which is as little as possible: the Portal
+// decides when the screensaver starts and when the screen goes off, from its
+// own timers and its camera's presence detection. The app only switches the
+// screen off for the night rule and the MQTT force_off command, and holds it
+// on for an install in progress and for force_on.
 //
-// The Portal reports "someone is here" as an ambient-mode poke: it keeps a
-// running screensaver alive, but it does not hold an awake screen on. So the
-// screensaver stays enabled, and what decides when the screen goes dark is the
-// secure `sleep_timeout`, counted from the last of those pokes.
-//
-// Only adb can grant writing secure settings (tools/setup-device.sh does it),
-// and the Portal resets `sleep_timeout` on its own, so the app writes it again
-// whenever the slideshow starts and every half minute after that. Without the
-// grant nothing happens and the Portal's own 20 minutes apply.
-//
-// `screen_off_timeout` (a system setting, granted in the System tab) only
-// decides when the screensaver starts, and is kept below the screen-off delay
-// so the slideshow reaches ambient mode before the screen goes off.
+// Earlier versions wrote `sleep_timeout` and `screen_off_timeout` themselves,
+// fighting the Portal, which kept putting its own values back.
+// tools/setup-device.sh restores the Portal's values on a device that still
+// has ours.
 object ScreenControl {
     private const val TAG = "ScreenControl"
-
-    // Hidden framework constant
-    private const val SLEEP_TIMEOUT = "sleep_timeout"
-
-    // Half of a very short setting would leave no time to walk up to the device
-    private const val MINIMUM_SLEEP_MILLIS = 30_000
-
-    // What the Portal ships with
-    private const val PORTAL_SLEEP_MILLIS = 1_200_000
-    private const val PORTAL_SCREENSAVER_MILLIS = 300_000
-
-    // The screensaver timeout has to stay *longer* than the screen-off delay.
-    // While the screensaver runs, the system ends it once this timeout passes
-    // without activity, and if the screen-off delay hasn't elapsed yet it wakes
-    // the device instead of sleeping, which resets the delay: the Portal then
-    // alternates between screensaver and awake for ever and never sleeps
-    // (measured with 60s against a 2 minute delay). Sleeping wins as long as
-    // its delay comes first.
-    private const val SCREENSAVER_MARGIN_MILLIS = 60_000
+    const val FORCE_ON = "force_on"
 
     // Whether `hour` falls in the night window, which usually wraps past
     // midnight (0 to 6 doesn't, 22 to 6 does). An empty window is never night.
@@ -53,96 +30,11 @@ object ScreenControl {
         else -> hour >= startHour || hour < endHour
     }
 
-    // Tells the Portal how long to wait, after it last saw someone, before
-    // switching the screen off. Does nothing if the setting is 0, and only does
-    // as much as the granted permissions allow.
-    fun applyScreenOffDelay(context: Context, settings: Settings) {
-        // 0 hands the screen back to the Portal, which is usually the better
-        // deal: its presence detection decides when to switch the screen off,
-        // and the app treats "screen on" as "somebody is in the room". Any
-        // shorter delay we set is fought over, because the Portal's presence
-        // reports don't restart the countdown the way a touch does, so the
-        // screen goes dark with somebody sitting in front of it and presence
-        // wakes it seconds later.
-        if (settings.screenOffMinutes <= 0) {
-            restorePortalDefaults(context)
-            return
-        }
-
-        // The Portal takes two rounds of the timeout to switch the screen off,
-        // so the written value is half of what the user asked for. Measured:
-        // last presence at 10:56:22, the screensaver ended and the device woke
-        // (instead of sleeping) at 10:58:22, which reset the delay, and it
-        // slept at 11:00:23 -- 4 minutes for a 2 minute setting. Going from an
-        // awake screen it does sleep in one round, so halving can make that
-        // case quicker than asked; the idle case is the one that matters here.
-        val millis = (settings.screenOffMinutes * 60_000 / 2).coerceAtLeast(MINIMUM_SLEEP_MILLIS)
-
-        if (canWriteSecureSettings(context)) {
-            writeIfDifferent(context, secure = true, SLEEP_TIMEOUT, millis) {
-                Log.i(
-                    TAG,
-                    "Screen now switches off about ${settings.screenOffMinutes} min after the last" +
-                        " person is seen (sleep_timeout ${millis / 1000}s, applied twice)"
-                )
-            }
-        }
-        // Presence only holds the screen on while the screensaver runs, so it
-        // has to start before the screen would go off, but time out after
-        if (AndroidSettings.System.canWrite(context)) {
-            val screensaverAfter = millis + SCREENSAVER_MARGIN_MILLIS
-            writeIfDifferent(context, secure = false, AndroidSettings.System.SCREEN_OFF_TIMEOUT, screensaverAfter) {
-                Log.i(TAG, "Screensaver now starts after ${screensaverAfter / 1000}s")
-            }
-        }
-    }
-
-    // Puts back what the Portal ships with, so turning the setting off really
-    // does hand the screen back rather than leaving our last values behind
-    private fun restorePortalDefaults(context: Context) {
-        if (canWriteSecureSettings(context)) {
-            writeIfDifferent(context, secure = true, SLEEP_TIMEOUT, PORTAL_SLEEP_MILLIS) {
-                Log.i(TAG, "Screen off delay back to the Portal's ${PORTAL_SLEEP_MILLIS / 60_000} min")
-            }
-        }
-        if (AndroidSettings.System.canWrite(context)) {
-            writeIfDifferent(
-                context,
-                secure = false,
-                AndroidSettings.System.SCREEN_OFF_TIMEOUT,
-                PORTAL_SCREENSAVER_MILLIS,
-            ) {
-                Log.i(TAG, "Screensaver delay back to the Portal's ${PORTAL_SCREENSAVER_MILLIS / 60_000} min")
-            }
-        }
-    }
-
-    // True once adb has granted it (see tools/setup-device.sh); without it the
-    // Portal's own screen-off delay applies
+    // True once adb has granted it (see tools/setup-device.sh); only high
+    // contrast text (TextContrast) needs it
     fun canWriteSecureSettings(context: Context): Boolean =
         context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) ==
             PackageManager.PERMISSION_GRANTED
-
-    private fun writeIfDifferent(
-        context: Context,
-        secure: Boolean,
-        key: String,
-        value: Int,
-        onWritten: () -> Unit,
-    ) {
-        val resolver = context.contentResolver
-        val current =
-            if (secure) AndroidSettings.Secure.getInt(resolver, key, -1)
-            else AndroidSettings.System.getInt(resolver, key, -1)
-        if (current == value) return
-        try {
-            if (secure) AndroidSettings.Secure.putInt(resolver, key, value)
-            else AndroidSettings.System.putInt(resolver, key, value)
-            onWritten()
-        } catch (e: SecurityException) {
-            Log.w(TAG, "Can't write $key", e)
-        }
-    }
 
     // Keeps the screen on while something the user is waiting for runs in
     // another app, such as the system installer: a keep-screen-on flag on our
@@ -157,6 +49,7 @@ object ScreenControl {
                 setReferenceCounted(false)
                 acquire(timeoutMillis)
                 Log.i(TAG, "Keeping the screen on: $reason")
+                noteHold(this, reason, timeoutMillis)
             }
         } catch (e: SecurityException) {
             Log.w(TAG, "Can't keep the screen on", e)
@@ -166,6 +59,28 @@ object ScreenControl {
 
     fun release(lock: PowerManager.WakeLock?) {
         if (lock?.isHeld == true) lock.release()
+        if (lock != null && holds.remove(lock) != null) onHoldChanged?.invoke()
+    }
+
+    // Why the app is holding the screen on, and until when (elapsedRealtime),
+    // for the MQTT state report. A forced one wins, being what was asked for.
+    data class Hold(val reason: String, val until: Long)
+
+    fun hold(): Hold? {
+        // A lock that timed out lets go without telling anyone
+        holds.keys.removeAll { !it.isHeld }
+        return holds.values.firstOrNull { it.reason == FORCE_ON } ?: holds.values.firstOrNull()
+    }
+
+    // Called on the main thread whenever a hold starts or is released, but not
+    // when one times out, which is what Hold.until is for
+    var onHoldChanged: (() -> Unit)? = null
+
+    private val holds = mutableMapOf<PowerManager.WakeLock, Hold>()
+
+    private fun noteHold(lock: PowerManager.WakeLock, reason: String, timeoutMillis: Long) {
+        holds[lock] = Hold(reason, SystemClock.elapsedRealtime() + timeoutMillis)
+        onHoldChanged?.invoke()
     }
 
     // Wakes the screen and holds it on, for the MQTT force_on command. The
@@ -177,11 +92,12 @@ object ScreenControl {
         forcedOn = try {
             power.newWakeLock(
                 PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
-                "astrodock:force_on",
+                "astrodock:$FORCE_ON",
             ).apply {
                 setReferenceCounted(false)
                 acquire(timeoutMillis)
                 Log.i(TAG, "Screen forced on")
+                noteHold(this, FORCE_ON, timeoutMillis)
             }
         } catch (e: SecurityException) {
             Log.w(TAG, "Can't force the screen on", e)

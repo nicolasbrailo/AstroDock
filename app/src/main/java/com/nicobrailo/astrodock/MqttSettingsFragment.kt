@@ -48,7 +48,7 @@ class MqttSettingsFragment : PreferenceFragmentCompat() {
         findPreference<Preference>("mqtt_topics")?.let { preference ->
             val settings = MqttSettings.load(requireContext())
             preference.summary = listOf(
-                "state/bridge", "state/occupancy", "state/slideshow_active", "state/displayed_photo"
+                "state", "state/bridge", "state/displayed_photo"
             ).joinToString("\n") { settings.topicPrefix + it }
         }
     }

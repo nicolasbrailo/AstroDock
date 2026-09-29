@@ -52,7 +52,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
-import java.time.LocalTime
 import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.math.sign
@@ -158,7 +157,7 @@ class SlideshowController(
 
     // Publishes what this device is doing to an MQTT broker, when that's set up
     private val reporter = StateReporter.get(context)
-    private val reporterSource = if (interactive) "home" else "screensaver"
+    private val reporterSource = if (interactive) StateReporter.HOME else StateReporter.SCREENSAVER
     private val announcement: TextView = root.findViewById(R.id.announcement)
     private var announcementJob: Job? = null
     // Who put up the announcement on screen, so they can take down their own
@@ -221,6 +220,8 @@ class SlideshowController(
             pageAnimator?.cancel()
             for (slot in listOf(prev, cur, next)) bind(slot, null)
             setOffset(0f)
+            // New server settings: the old ones' error says nothing about them
+            reporter.setError(ERROR_IMMICH, null)
         }
 
         // Before anything is reported, so a screen the Portal wakes at night
@@ -229,7 +230,7 @@ class SlideshowController(
 
         // Settings may have been edited in the MQTT tab meanwhile
         reporter.applySettings()
-        reporter.onSlideshowVisible(reporterSource, !dark)
+        reporter.onSlideshowShown(reporterSource, shown = true, dark = dark)
         started = true
         // Commands go to whichever slideshow is on screen
         reporter.setCommandListener(onCommand)
@@ -258,6 +259,7 @@ class SlideshowController(
 
         if (!state.isConfigured) {
             showStatus(context.getString(R.string.slideshow_not_configured))
+            reporter.setError(ERROR_IMMICH, context.getString(R.string.slideshow_not_configured))
             bindFromState()
             return
         }
@@ -271,7 +273,7 @@ class SlideshowController(
     // back shows the same one.
     fun stop() {
         started = false
-        reporter.onSlideshowVisible(reporterSource, false)
+        reporter.onSlideshowShown(reporterSource, shown = false, dark = false)
         reporter.clearCommandListener(onCommand)
         reporter.clearAlertListener(onAlert)
         nightJob?.cancel()
@@ -343,6 +345,7 @@ class SlideshowController(
         val settings = state.settings
         if (settings == null || !settings.showWeather) {
             weatherPanel.visibility = View.GONE
+            reporter.setError(ERROR_WEATHER, null)
             return
         }
         weatherJob = scope.launch {
@@ -364,6 +367,7 @@ class SlideshowController(
                 // either; the settings screen says so under the field
                 Log.w(TAG, "Weather: found no place called \"$placeName\"")
                 weatherPanel.visibility = View.GONE
+                reporter.setError(ERROR_WEATHER, "Found no place called \"$placeName\"")
                 return
             }
             weatherClient.current(place)
@@ -372,8 +376,10 @@ class SlideshowController(
             // point, so a broker-style alert would be more noise than it is
             // worth: the panel just stays as it was, or stays hidden.
             Log.w(TAG, "Weather: ${e.message}")
+            reporter.setError(ERROR_WEATHER, e.message.orEmpty())
             return
         }
+        reporter.setError(ERROR_WEATHER, null)
         weatherTemperature.text = weather.temperatureText
         weatherIcon.setImageResource(iconOf(weather.condition))
         weatherPanel.visibility = View.VISIBLE
@@ -412,11 +418,15 @@ class SlideshowController(
         pickJob = scope.launch {
             while (true) {
                 when (val result = state.pickAhead()) {
-                    SlideshowState.PickResult.Picked -> bindFromState()
+                    SlideshowState.PickResult.Picked -> {
+                        reporter.setError(ERROR_IMMICH, null)
+                        bindFromState()
+                    }
                     SlideshowState.PickResult.Nothing -> return@launch
                     is SlideshowState.PickResult.Failed -> {
                         // onTimer() retries
                         showStatus(context.getString(R.string.slideshow_error, result.message))
+                        reporter.setError(ERROR_IMMICH, result.message)
                         return@launch
                     }
                 }
@@ -459,12 +469,15 @@ class SlideshowController(
                     slot.view.setImageDrawable(result.image.asDrawable(context.resources))
                     slot.loaded = true
                     if (slot === cur) status.visibility = View.GONE
+                    // The server answers, so whatever went wrong before is over
+                    reporter.setError(ERROR_IMMICH, null)
                 }
                 is ErrorResult -> {
                     // onTimer() retries
                     Log.w(TAG, "Can't load picture $id", result.throwable)
                     if (slot === cur) {
                         showStatus(context.getString(R.string.slideshow_error, result.throwable.message))
+                        reporter.setError(ERROR_IMMICH, "Can't load picture $id: ${result.throwable.message}")
                     }
                 }
             }
@@ -599,6 +612,7 @@ class SlideshowController(
         }
         syncPictures()
         restartTimer()
+        reporter.refresh()
         Log.i(TAG, "Album filter: $filter")
     }
 
@@ -712,9 +726,6 @@ class SlideshowController(
             // touch the screen before it goes off again
             delay(NIGHT_FIRST_CHECK_MILLIS)
             while (true) {
-                // The Portal resets the screen-off delay on its own, so it's
-                // written again rather than only once at startup
-                state.currentSettings?.let { ScreenControl.applyScreenOffDelay(context, it) }
                 checkNight(mayLock = true)
                 delay(NIGHT_CHECK_MILLIS)
             }
@@ -723,14 +734,7 @@ class SlideshowController(
 
     private fun checkNight(mayLock: Boolean) {
         val now = SystemClock.elapsedRealtime()
-        val settings = state.currentSettings
-        val night = settings != null && settings.nightScreenOff &&
-            ScreenControl.isNight(LocalTime.now().hour, settings.nightStartHour, settings.nightEndHour) &&
-            // Someone is using the device: leave it alone for a while
-            now - state.lastTouchAt >= NIGHT_TOUCH_GRACE_MILLIS &&
-            // The settings screen greys the rule out without the admin, so it
-            // does nothing at all rather than half of it
-            ScreenControl.canTurnScreenOff(context)
+        val night = state.nightRuleApplies(context, now)
         setDark(night)
         if (!night || !mayLock) return
 
@@ -749,7 +753,7 @@ class SlideshowController(
         Log.i(TAG, if (on) "Night hours: dark" else "Night hours: showing pictures")
         nightCover.visibility = if (on) View.VISIBLE else View.GONE
         // Nobody can see a slideshow under the cover, so it isn't active
-        if (started) reporter.onSlideshowVisible(reporterSource, !on)
+        if (started) reporter.onSlideshowShown(reporterSource, shown = true, dark = on)
         window.attributes = window.attributes.apply {
             screenBrightness = if (on) NIGHT_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
         }
@@ -1001,6 +1005,9 @@ class SlideshowController(
 
     private companion object {
         const val TAG = "SlideshowController"
+        // Where the errors the MQTT state lists come from
+        const val ERROR_IMMICH = "immich"
+        const val ERROR_WEATHER = "weather"
 
         // A swipe moves to the neighbour if it went this fraction of the screen
         // width, or was a fling
@@ -1013,8 +1020,6 @@ class SlideshowController(
 
         const val NIGHT_CHECK_MILLIS = 30_000L
         const val NIGHT_FIRST_CHECK_MILLIS = 20_000L
-        // How long a touch keeps the screen on during the night hours
-        const val NIGHT_TOUCH_GRACE_MILLIS = 5 * 60 * 1000L
         // How long after switching the screen off at night it is left on if
         // the Portal wakes it again, which means its camera still sees someone
         const val NIGHT_RELOCK_MILLIS = 10 * 60 * 1000L

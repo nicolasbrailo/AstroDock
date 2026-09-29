@@ -9,6 +9,7 @@ import com.nicobrailo.astrodock.immich.ImmichException
 import com.nicobrailo.astrodock.immich.ImmichPictureInfo
 import com.nicobrailo.astrodock.immich.RandomAlbumPicker
 import kotlinx.coroutines.sync.Mutex
+import java.time.LocalTime
 
 // Which picture the slideshow is showing, shared by the home screen and the
 // screensaver.
@@ -62,6 +63,22 @@ class SlideshowState private constructor() {
     // know the screen it is on was switched off moments ago.
     var lastNightLockAt: Long? = null
 
+    // Whether the night rule wants the screen off now: the hour is in the
+    // night window and nobody has touched the slideshow for a while. Without
+    // the device admin the rule does nothing at all rather than half of it,
+    // since the settings screen greys it out. The slideshow asks, to go dark,
+    // and so does the MQTT report, which has to know with nothing on screen.
+    fun nightRuleApplies(context: Context, now: Long = SystemClock.elapsedRealtime()): Boolean {
+        val s = settings ?: return false
+        return s.nightScreenOff &&
+            ScreenControl.isNight(LocalTime.now().hour, s.nightStartHour, s.nightEndHour) &&
+            now - lastTouchAt >= NIGHT_TOUCH_GRACE_MILLIS &&
+            ScreenControl.canTurnScreenOff(context)
+    }
+
+    // When the latest touch stops holding off the night rule
+    val nightGraceEndsAt: Long get() = lastTouchAt + NIGHT_TOUCH_GRACE_MILLIS
+
     // The picture on screen and its neighbours
     val current: AlbumPicture? get() = history.current
     val previous: AlbumPicture? get() = history.peekBack()
@@ -80,7 +97,6 @@ class SlideshowState private constructor() {
         val newSettings = Settings.load(context)
         val old = settings
         settings = newSettings
-        ScreenControl.applyScreenOffDelay(context, newSettings)
 
         // Only the settings that decide which pictures are shown throw the
         // current ones away; changing the clock or the night hours shouldn't
@@ -178,6 +194,8 @@ class SlideshowState private constructor() {
         // How many pictures the user can swipe back through
         private const val HISTORY_SIZE = 20
         private const val METADATA_CACHE_SIZE = 60
+        // How long a touch keeps the screen on during the night hours
+        private const val NIGHT_TOUCH_GRACE_MILLIS = 5 * 60 * 1000L
 
         // The home screen and the screensaver are in the same process, so one
         // object is all it takes to share the slideshow between them

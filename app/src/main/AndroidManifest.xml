@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- The Wi-Fi signal, for the MQTT state report -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Offering apps to install (Apps tab of the settings). The user still
          confirms every install in the system's own screen. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -22,14 +24,9 @@
         android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
 
-    <!-- Sets how long the Portal waits before starting the screensaver. It only
-         works once the user allows it in the System tab: Settings.System.canWrite()
-         needs both this declaration and that grant. -->
-    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
-
-    <!-- Sets sleep_timeout: how long after the Portal last saw someone the
-         screen goes off. Only adb can grant it (tools/setup-device.sh); without
-         the grant the app carries on with the Portal's own delay. -->
+    <!-- Switches high contrast text (TextContrast). Only adb can grant it
+         (tools/setup-device.sh); without the grant the System tab's switch
+         does nothing. -->
     <uses-permission
         android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />

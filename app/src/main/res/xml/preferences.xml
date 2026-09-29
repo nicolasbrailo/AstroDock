@@ -89,15 +89,6 @@
     </PreferenceCategory>
 
     <PreferenceCategory app:title="@string/settings_category_screen">
-        <SeekBarPreference
-            android:max="30"
-            app:key="screen_off_minutes"
-            app:title="@string/settings_screen_off_minutes"
-            app:summary="@string/settings_screen_off_minutes_hint"
-            app:defaultValue="0"
-            app:min="0"
-            app:seekBarIncrement="1"
-            app:showSeekBarValue="true" />
         <SwitchPreferenceCompat
             app:key="night_screen_off"
             app:title="@string/settings_night_screen_off"

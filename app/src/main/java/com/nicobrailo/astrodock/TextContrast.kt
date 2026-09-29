@@ -15,9 +15,9 @@ import android.util.Log
 // the fix: it can't make the colours right, but no colour can hide text once
 // it is on.
 //
-// It is a secure setting, so it needs the same adb grant as sleep_timeout, and
-// it applies to every app on the device. That is why it is a switch the user
-// decides in the System tab rather than something turned on quietly.
+// It is a secure setting, so it needs the adb grant for WRITE_SECURE_SETTINGS,
+// and it applies to every app on the device. That is why it is a switch the
+// user decides in the System tab rather than something turned on quietly.
 object TextContrast {
     private const val TAG = "TextContrast"
 

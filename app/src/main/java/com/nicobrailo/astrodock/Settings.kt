@@ -16,9 +16,6 @@ data class Settings(
     // Which of the server's albums the pictures come from; empty means all
     val albumFilter: AlbumFilter,
     val slideSeconds: Int,
-    // How long the Portal waits, after it last saw someone, before switching
-    // the screen off. 0 leaves the system's own value alone.
-    val screenOffMinutes: Int,
     // Turn the screen off during the night hours below (needs the device admin)
     val nightScreenOff: Boolean,
     val nightStartHour: Int,
@@ -47,7 +44,6 @@ data class Settings(
         const val KEY_ALBUM_FROM_YEAR = "album_from_year"
         const val KEY_ALBUM_TO_YEAR = "album_to_year"
         const val KEY_SLIDE_SECONDS = "slide_seconds"
-        const val KEY_SCREEN_OFF_MINUTES = "screen_off_minutes"
         const val KEY_NIGHT_SCREEN_OFF = "night_screen_off"
         const val KEY_NIGHT_START_HOUR = "night_start_hour"
         const val KEY_NIGHT_END_HOUR = "night_end_hour"
@@ -58,7 +54,6 @@ data class Settings(
         const val DEFAULT_MAX_PICTURES = 20
         const val DEFAULT_PERCENT = 0
         const val DEFAULT_SLIDE_SECONDS = 30
-        const val DEFAULT_SCREEN_OFF_MINUTES = 0
         const val DEFAULT_NIGHT_START_HOUR = 0
         const val DEFAULT_NIGHT_END_HOUR = 6
 
@@ -69,7 +64,6 @@ data class Settings(
         // The sliders' ranges; see res/xml/preferences.xml for their steps
         val PERCENT_RANGE = 0..100
         val SLIDE_SECONDS_RANGE = 5..300
-        val SCREEN_OFF_MINUTES_RANGE = 0..30
         val HOUR_RANGE = 0..23
 
         fun load(context: Context): Settings {
@@ -103,9 +97,6 @@ data class Settings(
                     toYear = int(KEY_ALBUM_TO_YEAR, 0, YEAR_RANGE),
                 ),
                 slideSeconds = slider(KEY_SLIDE_SECONDS, DEFAULT_SLIDE_SECONDS, SLIDE_SECONDS_RANGE),
-                screenOffMinutes = slider(
-                    KEY_SCREEN_OFF_MINUTES, DEFAULT_SCREEN_OFF_MINUTES, SCREEN_OFF_MINUTES_RANGE
-                ),
                 nightScreenOff = prefs.getBoolean(KEY_NIGHT_SCREEN_OFF, false),
                 nightStartHour = int(KEY_NIGHT_START_HOUR, DEFAULT_NIGHT_START_HOUR, HOUR_RANGE),
                 nightEndHour = int(KEY_NIGHT_END_HOUR, DEFAULT_NIGHT_END_HOUR, HOUR_RANGE),

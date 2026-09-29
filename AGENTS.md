@@ -83,9 +83,9 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
 - `PictureDescription.kt`: turns metadata into the slideshow's overlay text.
 - `PictureHistory.kt`: the pictures the user can swipe back through.
 - `Settings.kt`: settings stored in SharedPreferences: keys, defaults and valid
-  ranges. Percent of each album, seconds per picture and the screen-off delay
-  are sliders (`SeekBarPreference`), which store an int, so `load()` converts
-  the string a text input would have left behind the first time it reads one.
+  ranges. Percent of each album and seconds per picture are sliders
+  (`SeekBarPreference`), which store an int, so `load()` converts the string a
+  text input would have left behind the first time it reads one.
 - `SettingsActivity.kt` + `res/layout/activity_settings.xml`: settings with two
   tabs. The Slideshow tab is the preferences in `res/xml/preferences.xml`, whose
   keys must match `Settings.KEY_*`.
@@ -192,13 +192,14 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   an hour after the slideshow started, and works in the local zone because a
   few zones are offset by half an hour or three quarters of one. Both are pure
   and unit tested; only the fetch and the JSON are not.
-- `mqtt/StateReporter.kt`, `mqtt/MqttSettings.kt`, `mqtt/Occupancy.kt` +
+- `mqtt/StateReporter.kt`, `mqtt/MqttSettings.kt`, `mqtt/Occupancy.kt`, `mqtt/DeviceState.kt` +
   `MqttSettingsFragment.kt`, `res/xml/mqtt_preferences.xml`: publishes what the
   device is doing to an MQTT broker, on the topics of the homeboard bridge
   (`~/src/homeboard/dbus-mqtt-bridge/README.md`): `state/bridge` (online record,
   with the offline one preset as the last will, so a crash still reports),
-  `state/occupancy`, `state/slideshow_active` and `state/displayed_photo`. All
-  retained, QoS 0. It also subscribes to `<prefix>cmd/#` and carries out the
+  `state/displayed_photo`, and `state`, which is ours rather than the spec's
+  and replaces its `state/occupancy` and `state/slideshow_active` (the
+  homeboard is to follow). All retained, QoS 0. It also subscribes to `<prefix>cmd/#` and carries out the
   commands that mean something here (`mqtt/Command.kt`): `ambience/next`,
   `ambience/prev`, `ambience/set_transition_time_secs` (`{"secs":n}`, saved as
   the slideshow setting), `ambience/announce` (`{"timeout":n,"msg":"..."}`,
@@ -253,12 +254,40 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   Immich album and the paths are the server's copy of the original;
   `reverse_geo` holds the place names already in the picture's EXIF, and
   nothing is looked up. `src_url` needs the API key to fetch.
-  Departures from the spec, both because this is a Portal: `distance_cm` is
-  never published (no mmWave sensor), and occupancy is a guess from the screen
-  (`Occupancy`), with a `source` field saying which. The slideshow runs in two
-  places and they hand over in either order, so each reports itself by name and
-  `slideshow_active` is true while either is showing, and false while the
-  night rule has it covered in black. The topic prefix and the client id default
+  `state` is one record of everything else about the device, published only
+  when some of it changes (never on a timer), with `ts` the time of the
+  change. Unknown is `null` rather than left out:
+  `occupancy` (`occupied` and `source`, a guess from the screen, see
+  `Occupancy`; there's no `distance_cm`, having no mmWave sensor);
+  `slideshow` (`active`: pictures visible, so the screen is on and the night
+  cover isn't; `shown_in`, `home` or `screensaver`, the one that appeared
+  last, since they hand over in either order; `night_cover`; and
+  `album_filter` in the field names `set_album_filter` takes);
+  `screen` (`on`, `since`, `screensaver`, the last of which is any
+  screensaver, the Portal's too, and `wanted` plus `wanted_reason`: what the
+  app wants the screen to be, `null` when it leaves it to the Portal, which is
+  most of the time. `on` for `force_on` or `install`, `off` for `force_off`
+  until the screen next comes on, or `night` while the night rule applies.
+  `DeviceState.screenWish` holds the order, unit tested. Comparing it with
+  `on` shows the Portal waking a screen we want off);
+  `errors` (`[{source, message}]`, `immich` and `weather`, cleared once they
+  work again); `battery` (level, status, plugged, health, technology,
+  temperature and voltage; `null` on a Portal without one); `wifi_rssi`;
+  `light_lux`; and `app` (version, and `started_at` and `device_booted_at` as
+  timestamps, so uptime doesn't change the record).
+  The sensors would republish on every flicker, so a reading only replaces the
+  published one once it moves far enough (`DeviceState.significant`: 5 dBm,
+  and 5 lx and a quarter, since a dark room reads anything from 0 to 3 lx
+  second to second), and the battery's temperature and voltage likewise.
+  Changes are gathered for 300ms before publishing, because the handover
+  between the home screen and the screensaver is several in a few
+  milliseconds, the ones in between saying nothing is on screen. Some
+  changes come with nothing to report them (a hold timing out, the screen
+  staying on long enough to mean presence, the night starting or ending,
+  a touch's grace running out), so each publish works out when the next of
+  those is due and looks again then. The night rule itself is
+  `SlideshowState.nightRuleApplies`, shared with the slideshow, since the
+  report has to know with nothing on screen. The topic prefix and the client id default
   to the name the device was given at setup, sanitised for topics (e.g.
   `portaloft-portal/`): "astrodock" is the software, the unit is the Portal.
   The Portal's setup keeps that name only as the Bluetooth name (the secure
@@ -267,10 +296,17 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   `MqttSettings.systemName` reads the Bluetooth name (`BluetoothAdapter`, then
   the setting) and only falls back to `device_name`. Each device needs its own
   prefix, or they overwrite each other's retained topics, so before connecting
-  (`prefixIsFree`) the reporter reads the retained `state/bridge`, on a
+  (`checkPrefix`) the reporter reads the retained `state/bridge`, on a
   connection of its own with no last will, and if it holds another
   `machine_id` it stays off the broker and shows why in the alert corner. It
-  doesn't try those settings again until they change or the app restarts. An
+  doesn't try those settings again until they change or the app restarts.
+  That check subscribes to `<prefix>#`, so it also sees everything else
+  retained there, and once the prefix is ours, the first connect clears what
+  we don't publish (topics from older versions, retained commands) by
+  publishing an empty retained message to each: MQTT can't delete by
+  wildcard. The three topics we publish are left to be replaced, not cleared.
+  It stops listening 300ms after the last retained message, or after 2s if
+  there are none. An
   empty record is free: `mosquitto_pub -r -n -t <prefix>state/bridge` hands a
   prefix over. `machine_id` is `ANDROID_ID` (a generated UUID only without
   one), because it has to survive a reinstall: a device with a new id would
@@ -285,7 +321,8 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   opens the system dialog. Granted items have no button, and nor do `adbOnly`
   ones, whose system screen can't grant them: the secure settings grant
   everywhere, and on a Portal (`Build.MANUFACTURER` "Facebook") the device
-  admin and notification access too.
+  admin and notification access too, and the home screen on a Portal without
+  the role dialog (see the platform notes on the Android 9 Portal).
   These intents must be started **for a result** (`systemDialog.launch`): the
   role dialog identifies the caller that way and closes immediately otherwise.
   That dialog is the only thing in the app that needs API 29 (`RoleManager`),
@@ -295,22 +332,22 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   button runs that and rebuilds the list rather than opening anything; high
   contrast text is the only one.
 - `TextContrast.kt`: the `high_text_contrast_enabled` switch behind that item.
-  It is a secure setting, so it rides on the same adb grant as `sleep_timeout`
-  and does nothing without it, which is why the System tab shows the two next
-  to each other.
+  It is a secure setting, so it needs the adb grant for
+  `WRITE_SECURE_SETTINGS` and does nothing without it, which is why the System
+  tab shows the two next to each other. It is the only thing that grant is for.
 - `ScreenAdminReceiver.kt` + `res/xml/device_admin.xml`: device admin with the
   force-lock policy only, so the app can turn the screen off. On the Portal the
   System tab's button doesn't work (see the platform notes), so
   `tools/setup-device.sh` grants it with `dpm set-active-admin`.
-- `ScreenControl.kt`: the two bits of screen behaviour the app may control. It
-  writes `sleep_timeout` (**half** the screen-off delay, because the Portal
-  takes two rounds of it to switch the screen off; secure, needs the adb grant)
-  and
-  `screen_off_timeout` (when the screensaver starts, needs both the
-  `WRITE_SETTINGS` declaration in the manifest **and** the user's grant:
-  `Settings.System.canWrite()` is false without either. It also turns the screen
-  off with `DevicePolicyManager.lockNow()` for the night rule, and holds the
-  night-window arithmetic (which wraps past midnight), unit tested.
+- `ScreenControl.kt`: what the app does to the screen, which is as little as
+  possible: the Portal decides when the screensaver starts and when the screen
+  goes off (see the platform notes). It turns the screen off with
+  `DevicePolicyManager.lockNow()` for the night rule and MQTT `force_off`,
+  holds it on with a wake lock for an install and for `force_on` (and says
+  which is held, and until when, for the MQTT `state`), and holds
+  the night-window arithmetic (which wraps past midnight), unit tested. It
+  doesn't write `sleep_timeout` or `screen_off_timeout`; earlier versions did,
+  and `tools/setup-device.sh` puts the Portal's values back.
 - `SlideshowState.kt`: which picture is being shown, as one object for the whole
   process (`SlideshowState.shared`): the settings, client and picker, the
   history, the picture picked ahead, the metadata cache and whether the details
@@ -344,6 +381,13 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   window manager once the window is up (an activity does), so
   `onWindowAttributesChanged` does it; without that the night rule's backlight
   override had no effect in the screensaver.
+  `isScreenBright` is false: a bright dream puts `FLAG_KEEP_SCREEN_ON` on its
+  window, which the power manager counts as a screen wake lock
+  (`mWakeLockSummary` gains `STAY_AWAKE`), so it never slept on its timeout
+  while the screensaver ran. Measured 2026-09-25: a `SCREEN_BRIGHT_WAKE_LOCK`
+  from the window manager on behalf of astrodock, held for 13h, and no "Going
+  to sleep due to screen timeout" since the Portal's own screensaver last ran;
+  the screen stayed on in an empty room.
   A dream has **no AppCompat theme**, so `res/layout/slideshow.xml` may only use
   framework attributes (`?android:attr/...`). An AppCompat one like
   `?attr/selectableItemBackgroundBorderless` inflates fine in the activity but
@@ -540,11 +584,10 @@ slideshow, since whatever is on screen may come from an album that is now
 filtered out. Under "Weather": whether to show it at all and the
 place to show it for: a town or city, with a comma and the region or country
 if several share the name, or "latitude, longitude". Empty hides the panel.
-Changing any of it leaves the pictures alone. Under "Screen": how long
-after the Portal last saw someone the screen switches off (a slider, 0 leaves
-the system's value alone) and an opt-in "turn the screen off at night" with its hours,
-a slider with two knobs (default 00:00 to 06:00, off). Without the device admin ("Turn the screen
-off" in the System tab) the night rule can't do anything, so its switch and
+Changing any of it leaves the pictures alone. Under "Screen": an opt-in "turn
+the screen off at night" with its hours, a slider with two knobs (default
+00:00 to 06:00, off). Without the device admin ("Turn the screen off" in the
+System tab) the night rule can't do anything, so its switch and
 hours are greyed out and the reason is shown in red; this is checked every
 time the tab is resumed, so granting it enables them. The red doesn't show on
 a Portal set up by `tools/setup-device.sh`, whose high contrast text draws
@@ -557,7 +600,7 @@ detection wakes the screen about every 30s while its camera sees someone, and
 nothing an app can reach stops that:
 - **Dark**: the slideshow is covered in black (`night_cover`) with the window's
   backlight override at 1/255, the panel's lowest (dim, not off), and the timer
-  stops moving pictures. MQTT reports it as `slideshow_active` false. This is
+  stops moving pictures. MQTT reports the slideshow as not `active`. This is
   decided the moment a slideshow appears, before it reports anything, so a
   screen the Portal has just woken never shows a picture and never reports a
   moment of `true`. A touch on the cover
@@ -593,13 +636,13 @@ the server and sampling settings reset the slideshow.
   in the manifest), and the light sensor.
 - **Timers:** `screen_off_timeout` (system setting) decides when the screensaver
   starts; the secure `sleep_timeout` decides when the screen goes off, counted
-  from the last presence report. The Slideshow tab's "turn the screen off after"
-  writes both (`ScreenControl.applyScreenOffDelay`), keeping the screensaver
-  delay below the screen-off delay. **0 means "leave it to the Portal"**: the
-  app then puts the Portal's own values back (1200000 / 300000) instead of
-  leaving its last ones behind. Apart from the night rule, which calls
-  `lockNow()`, these settings are the only way the app touches the screen: it
-  holds no wake lock and sets no keep-screen-on flag.
+  from the last presence report. The Portal's own values are 300000 and
+  1200000, and the app leaves both alone. It used to write them (a "turn the
+  screen off after" slider), and gave up: the Portal kept putting its own
+  back, and the measurements below were all made while fighting it. Apart
+  from the night rule and MQTT's `force_on`/`force_off`, the app doesn't touch
+  the screen: no wake lock, and no keep-screen-on flag, not even on the
+  screensaver's window (see `SlideshowDreamService`).
 - **`Notify people presence` in the log does not mean somebody was seen.** The
   camera logs that line every 30s as a periodic update carrying a value. What
   counts is whether the Portal then pokes the power manager, and only
@@ -621,23 +664,22 @@ the server and sampling settings reset the slideshow.
   off:** the first round ended the screensaver and woke the device, which reset
   the delay, and the second slept. Measured once, with nobody in view: last
   detection 10:56:22, wake 10:58:22, asleep 11:00:23, for a 2 minute setting.
-  `ScreenControl` therefore writes half of what the user asked for. From an
-  awake screen one round was enough, so that case switches off sooner than the
-  setting says. Worth re-measuring if the delay ever feels wrong.
+  From an awake screen one round was enough. This was measured with the
+  screensaver's keep-screen-on flag still set, so it is worth re-measuring.
 - **The screensaver timeout must be longer than the screen-off delay.** While
   the screensaver runs, the system ends it once `screen_off_timeout` passes
   without activity; if `sleep_timeout` hasn't elapsed yet it *wakes the device*
   instead of sleeping, and waking resets the delay. With 60s against a 2 minute
   delay the Portal alternated screensaver/awake every 60s all night with nobody
-  in the room. `ScreenControl` therefore writes `screen_off_timeout` as the
-  screen-off delay plus a minute. Measured after the fix: `Going to sleep due to
+  in the room. The Portal's own values (5 minutes against 20) are the wrong
+  way round by this rule, which is worth watching now the app leaves them
+  alone. Measured with the screensaver delay a minute longer: `Going to sleep due to
   timeout` exactly 2 minutes after the last activity, then
   `Waking up from Dozing ... PresenceManager` when someone came back.
 - **`sleep_timeout` needs re-applying.** Writing it needs `WRITE_SECURE_SETTINGS`
   (`tools/setup-device.sh` grants it with `pm grant`), and the Portal puts its
   own 1200000 back: our first write was reverted within the same second, and the
-  re-apply 20s later stuck. `SlideshowController` therefore writes it again
-  every 30s while the slideshow is on screen.
+  re-apply 20s later stuck. That fight is why the app no longer writes it.
 - **Portal's ambient mode** is a screensaver:
   `screensaver_components=com.facebook.alohaapps.launcher/com.facebook.aloha.app.home.touch.HomeDreamService`,
   a windowless dream that starts the home activity. Ours replaces it, and
@@ -646,8 +688,10 @@ the server and sampling settings reset the slideshow.
 - **Dark room clock:** the Portal launcher switches to a full-screen clock when
   the light sensor reads dark (`AmbientLightSensor: luxDark`). Covering the
   camera also covers the light sensor.
-- A keep-screen-on flag in our app would block sleep entirely, and with it the
-  "screen off when nobody is around" behaviour.
+- A keep-screen-on flag in our app blocks sleep entirely, and with it the
+  "screen off when nobody is around" behaviour. `DreamService` sets one unless
+  `isScreenBright` is false, which is how the screensaver kept the screen on
+  all day until 2026-09-25.
 - `tools/capture-presence.sh OUT_DIR` records logcat, power, dream, top
   activity and light-sensor changes, for experiments like these.
 - The Portal verifies every install made on the device against a fixed set of
@@ -710,17 +754,38 @@ the server and sampling settings reset the slideshow.
   screensaver while the screen is still off, so the one the Portal wakes up to
   is already running.
 - `tools/setup-device.sh` takes no arguments: it applies everything an app can't
-  set for itself (home screen, screensaver, bug pill, app verifier, high
-  contrast text for the install dialog, notification access, the device admin,
-  and the app-ops behind the System tab's other permissions: `WRITE_SETTINGS`,
-  `SYSTEM_ALERT_WINDOW`, `REQUEST_INSTALL_PACKAGES`) and prints the result.
+  set for itself (home screen, screensaver, the Portal's own screen timers,
+  bug pill, app verifier, high contrast text for the install dialog,
+  notification access, the device admin, and the app-ops behind the System
+  tab's other permissions: `SYSTEM_ALERT_WINDOW`, `REQUEST_INSTALL_PACKAGES`)
+  and prints the result.
   Its header lists the commands to undo each one. Nothing else is needed.
 - `sleep_timeout` does not stick: it was back at the Portal's 1200000 twice
   after the device dreamt and woke again, so something on the Portal resets it.
-  Don't rely on it; to control when the screen goes off, use the device admin
+  The app doesn't write it any more; to control when the screen goes off, use the device admin
   (`ScreenAdminReceiver`) and `DevicePolicyManager.lockNow()`.
+- **Installing over a running screensaver loses the screensaver setting.**
+  `adb install -r` kills the dream, and the system then puts
+  `screensaver_components` back to the Portal's `HomeDreamService`. Measured
+  2026-09-25. Run `tools/setup-device.sh` again after such an install.
 - Declaring HOME means that, until the user picks a default home app, pressing
   Home shows a chooser between astrodock and the Portal launcher.
+- **A home app that crashes loses the default.** Android clears the preferred
+  activities of a home app that isn't a system app every time it crashes, so
+  the next Home press shows the chooser again, and whatever is tapped there
+  becomes the home screen. Measured 2026-09-24: `tools/setup-device.sh` had
+  set astrodock, then each crash of the screensaver (the `LauncherModel.stop`
+  one) was followed by the chooser, and after the third the Portal launcher
+  was picked in it. So a home screen that "didn't stick" is usually a crash:
+  `adb logcat -b crash` and `grep 'preferred activity'` in the log show it.
+- **The older Portal (`aloha_prod`, model `Portal_`) runs Android 9 (API
+  28)**, so it has no role dialog, and the system's home screen settings
+  (`ACTION_HOME_SETTINGS`, `Settings$AdvancedAppsActivity`) crash while laying
+  out their list (`ClassCastException` from `FrameLayout.onMeasure`), before
+  drawing anything, with no crash dialog since Settings is a system app.
+  Nothing on the device can pick the home screen, so the System tab treats it
+  as adb only there, and `tools/setup-device.sh`'s `set-home-activity` works.
+  Measured 2026-09-24.
 - Some apps leave no way back to the launcher. With `com.whatsapp` in front the
   Portal's SystemUI still reports its Back and Home buttons as visible, but
   nothing is drawn and taps in that area do nothing; Jellyfin and Spotify, also

@@ -33,7 +33,11 @@ class SlideshowDreamService : DreamService() {
         super.onCreate()
         isFullscreen = true
         isInteractive = false
-        isScreenBright = true
+        // A bright dream puts FLAG_KEEP_SCREEN_ON on its window, and the power
+        // manager then never sleeps on its timeout while the screensaver runs:
+        // the screen stayed on all day in an empty room. The Portal decides
+        // when the screen goes off, so the window must not hold it on.
+        isScreenBright = false
     }
 
     // Touches end the screensaver and go back to the home screen, but only once

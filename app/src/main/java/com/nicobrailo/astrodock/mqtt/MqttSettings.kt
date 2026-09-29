@@ -64,7 +64,7 @@ data class MqttSettings(
         }
 
         // The spec requires a prefix ending in "/", and a missing slash would
-        // silently publish to a neighbouring topic ("portalgostate/occupancy")
+        // silently publish to a neighbouring topic ("portalgostate/bridge")
         fun normalizePrefix(raw: String?, default: String): String {
             val trimmed = raw?.trim()?.trimStart('/').orEmpty()
             if (trimmed.isEmpty()) return default

@@ -24,10 +24,11 @@ import androidx.fragment.app.Fragment
 // it's set up, and, while it isn't, a button that opens the system dialog or
 // settings screen to set it up, where that screen works.
 //
-// The Portal has the role request dialog, the screensaver list and the
-// "modify system settings" screen, but its device admin dialog refuses the app
+// The Portal has the role request dialog and the screensaver list, but its
+// device admin dialog refuses the app
 // and its notification access screen closes itself, so those two only have
-// the script there.
+// the script there. So does the home screen on the older Android 9 Portals,
+// which have no role dialog and whose home screen settings crash.
 class SystemSettingsFragment : Fragment() {
     // One requirement, with the intent that sets it, or, for the one the app
     // can set itself, the action that does it. `missing` is its line in the
@@ -92,22 +93,30 @@ class SystemSettingsFragment : Fragment() {
             ?.activityInfo?.packageName == context.packageName
         val screensavers = AndroidSettings.Secure
             .getString(context.contentResolver, "screensaver_components")
-        val sleepTimeout = AndroidSettings.Secure.getInt(context.contentResolver, "sleep_timeout", -1)
         val contrastOn = TextContrast.isEnabled(context)
         // Its device admin and notification access screens can't grant
         // anything (see the class comment)
         val isPortal = Build.MANUFACTURER.equals("Facebook", ignoreCase = true)
 
+        val homeRole = homeRoleIntent(context)
+        // A Portal older than the Go (Android 9) has no role dialog, and its
+        // home screen settings crash while laying out the list, before they
+        // draw anything, so the button would look like it does nothing
+        val homeAdbOnly = isPortal && homeRole == null
+
         return listOf(
             Item(
                 title = getString(R.string.system_home_title),
-                description = getString(R.string.system_home_description),
+                description = getString(
+                    if (homeAdbOnly) R.string.system_home_description_adb
+                    else R.string.system_home_description
+                ),
                 buttonText = getString(R.string.system_home_button),
                 done = isHome,
                 // The role dialog if the device has it, else the home screen settings
-                intent = homeRoleIntent(context)
-                    ?: Intent(AndroidSettings.ACTION_HOME_SETTINGS),
+                intent = homeRole ?: Intent(AndroidSettings.ACTION_HOME_SETTINGS),
                 missing = getString(R.string.system_home_missing),
+                adbOnly = homeAdbOnly,
             ),
             Item(
                 title = getString(R.string.system_dream_title),
@@ -133,17 +142,6 @@ class SystemSettingsFragment : Fragment() {
                     ),
                 missing = getString(R.string.system_admin_missing),
                 adbOnly = isPortal,
-            ),
-            Item(
-                title = getString(R.string.system_write_settings_title),
-                description = getString(R.string.system_write_settings_description),
-                buttonText = getString(R.string.system_write_settings_button),
-                done = AndroidSettings.System.canWrite(context),
-                intent = Intent(
-                    AndroidSettings.ACTION_MANAGE_WRITE_SETTINGS,
-                    Uri.parse("package:${context.packageName}")
-                ),
-                missing = getString(R.string.system_write_settings_missing),
             ),
             Item(
                 title = getString(R.string.system_overlay_title),
@@ -191,7 +189,7 @@ class SystemSettingsFragment : Fragment() {
             // Only adb can grant this one, so there's nothing to tap: the
             // command is in the description, and tools/setup-device.sh runs it
             Item(
-                title = getString(R.string.system_sleep_timeout_title, formatMillis(sleepTimeout)),
+                title = getString(R.string.system_sleep_timeout_title),
                 description = getString(R.string.system_sleep_timeout_description),
                 buttonText = null,
                 done = ScreenControl.canWriteSecureSettings(context),
@@ -200,7 +198,7 @@ class SystemSettingsFragment : Fragment() {
                 adbOnly = true,
             ),
             // The only one the app switches itself, so it has no system screen
-            // to open. It rides on the same grant as the delay above, and
+            // to open. It rides on the grant above, and
             // without it there is nothing to tap.
             Item(
                 title = getString(R.string.system_contrast_title),
@@ -262,11 +260,5 @@ class SystemSettingsFragment : Fragment() {
             button.setOnClickListener { onClick() }
         }
         items.addView(view)
-    }
-
-    private fun formatMillis(ms: Int): String = when {
-        ms < 0 -> "?"
-        ms >= 60_000 -> "${ms / 60_000} min"
-        else -> "${ms / 1000} s"
     }
 }

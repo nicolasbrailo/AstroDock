@@ -4,6 +4,12 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
+import android.net.wifi.WifiManager
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -12,12 +18,15 @@ import android.os.SystemClock
 import android.provider.Settings as AndroidSettings
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.nicobrailo.astrodock.BuildConfig
 import com.nicobrailo.astrodock.R
 import com.nicobrailo.astrodock.ScreenControl
 import com.nicobrailo.astrodock.Settings
+import com.nicobrailo.astrodock.SlideshowState
 import com.nicobrailo.astrodock.audio.AnnouncementPlayer
 import com.nicobrailo.astrodock.immich.AlbumFilter
 import com.nicobrailo.astrodock.immich.ImmichPictureInfo
+import com.nicobrailo.astrodock.weather.millisToNextHour
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,30 +49,32 @@ import org.json.JSONObject
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.time.Instant
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.CompletableFuture
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 // Publishes what this device is doing to an MQTT broker, following the
 // homeboard bridge's topics (see its README):
 //
 //   <prefix>state/bridge            online/offline record, offline also as the
 //                                   last will, so a crash still says so
-//   <prefix>state/occupancy         {"occupied":..,"ts":..,"source":..}
-//   <prefix>state/slideshow_active  {"active":..}
+//   <prefix>state                   everything else about the device, as one
+//                                   record (see stateJson)
 //   <prefix>state/displayed_photo   the picture on screen, our own schema
 //
 // Everything is retained and QoS 0, as in the spec, so a client that subscribes
-// later still sees the current state.
+// later still sees the current state. <prefix>state replaces the spec's
+// state/occupancy and state/slideshow_active; it is published whenever any of
+// it changes, and never just to say nothing did.
 //
 // It also subscribes to <prefix>cmd/# and carries out the commands that mean
 // something here (see Command.kt): the screen ones itself, the slideshow ones
 // through whichever slideshow is on screen.
 //
 // Differences from the spec, all because this is a Portal and not the
-// homeboard: `distance_cm` is never published (no mmWave sensor, and occupancy
-// is a guess from the screen — see Occupancy), and the render config fields of
+// homeboard: there is no `distance_cm` (no mmWave sensor, and occupancy is a
+// guess from the screen — see Occupancy), and the render config fields of
 // state/bridge are left out because nothing here has them.
 //
 // One instance per process. Its methods are safe to call from the main thread:
@@ -85,42 +96,98 @@ class StateReporter private constructor(private val context: Context) {
     @Volatile
     private var alertListener: ((String?) -> Unit)? = null
     private var settings: MqttSettings? = null
-    private var occupancyJob: Job? = null
     private var connectWatchdog: Job? = null
-    // Checking the prefix and then connecting (see prefixIsFree)
+    // Checking the prefix and then connecting (see checkPrefix)
     private var connectJob: Job? = null
     // Settings whose prefix another device turned out to own. They aren't
     // tried again, since that would only find the same device again: changing
     // them, or restarting the app, does.
     @Volatile
     private var refused: MqttSettings? = null
-    private var watchingScreen = false
+    private var watchingDevice = false
     // A failure shows up the same way as a text announcement, on whichever
     // slideshow is on screen
     private val announcer = AnnouncementPlayer(context) { message ->
         carryOut(Command.Announce(message, ANNOUNCE_ERROR_SECONDS))
     }
 
-    // The state we publish, kept so a reconnect can republish all of it.
-    // The slideshow runs in two places (the home screen and the screensaver),
-    // and they hand over in either order, so each says whether it is showing
-    // and the topic reports whether any of them is.
-    private val showing = mutableSetOf<String>()
+    // What goes into <prefix>state, all of it used on the main thread. The
+    // slideshow runs in two places (the home screen and the screensaver), and
+    // they hand over in either order, so each says whether it is showing and
+    // whether it is under the night cover, in the order they appeared.
+    private val showing = LinkedHashMap<String, Boolean>()
     private var displayedPhoto: JSONObject? = null
-    private var lastSlideshowActive: Boolean? = null
-    private var lastGuess: Occupancy.Guess? = null
     private var screenOn = powerManager?.isInteractive != false
     private var screenChangedAt = SystemClock.elapsedRealtime()
+    // Wall clock, for the report; unknown until the screen first changes
+    private var screenOnSince: Long? = null
+    // Whether a screensaver (ours or the Portal's) is running; unknown until
+    // one starts or stops
+    private var dreaming: Boolean? = null
+    // force_off switched the screen off, and it hasn't come back on since
+    private var forcedOff = false
+    // What is wrong, by where it comes from ("immich", "weather")
+    private val errors = LinkedHashMap<String, String>()
+    private var battery: Battery? = null
+    // The readings as last published, which only move on a significant change
+    private var rssi: Float? = null
+    private var lux: Float? = null
+    // What was last published, without its timestamp, to tell a change
+    private var lastState: String? = null
     private val startedAt = System.currentTimeMillis() / 1000
+    private val bootedAt = (System.currentTimeMillis() - SystemClock.elapsedRealtime()) / 1000
+    private val recheck = Runnable { publishState() }
+    private val publishNow = Runnable { publishState(force = false, now = true) }
 
-    private val screenReceiver = object : BroadcastReceiver() {
+    private data class Battery(
+        val level: Int?,
+        val status: String,
+        val plugged: String,
+        val health: String,
+        val present: Boolean,
+        val technology: String?,
+        val temperatureC: Float?,
+        val voltageV: Float?,
+    )
+
+    private val deviceReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            val on = intent.action == Intent.ACTION_SCREEN_ON
-            if (on == screenOn) return
-            screenOn = on
-            screenChangedAt = SystemClock.elapsedRealtime()
-            publishOccupancy()
+            when (intent.action) {
+                Intent.ACTION_SCREEN_ON, Intent.ACTION_SCREEN_OFF -> {
+                    val on = intent.action == Intent.ACTION_SCREEN_ON
+                    if (on == screenOn) return
+                    screenOn = on
+                    screenChangedAt = SystemClock.elapsedRealtime()
+                    screenOnSince = System.currentTimeMillis() / 1000
+                    // force_off is done with once anything wakes the screen
+                    if (on) forcedOff = false
+                }
+                Intent.ACTION_DREAMING_STARTED -> dreaming = true
+                Intent.ACTION_DREAMING_STOPPED -> dreaming = false
+                Intent.ACTION_BATTERY_CHANGED -> battery = readBattery(intent)
+                WifiManager.RSSI_CHANGED_ACTION, WifiManager.NETWORK_STATE_CHANGED_ACTION -> {
+                    val reading = readRssi()
+                    if (!DeviceState.significant(rssi, reading, RSSI_STEP_DBM)) return
+                    rssi = reading
+                }
+            }
+            publishState()
         }
+    }
+
+    private val lightListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            val reading = event.values.firstOrNull() ?: return
+            if (!DeviceState.significant(lux, reading, LUX_STEP, LUX_STEP_FRACTION)) return
+            lux = reading
+            publishState()
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) = Unit
+    }
+
+    init {
+        ScreenControl.onHoldChanged = { publishState() }
     }
 
     // Connects, or reconnects with the new settings if they changed. Called
@@ -137,11 +204,12 @@ class StateReporter private constructor(private val context: Context) {
             return
         }
 
-        watchScreen()
+        watchDevice()
         connectJob = scope.launch {
             // Settings that changed while this was checking have a check of
             // their own under way
-            if (prefixIsFree(newSettings) && settings === newSettings) connect(newSettings)
+            val stale = checkPrefix(newSettings) ?: return@launch
+            if (settings === newSettings) connect(newSettings, stale)
         }
     }
 
@@ -174,22 +242,30 @@ class StateReporter private constructor(private val context: Context) {
         mainThread.post { if (alertListener === listener) listener(message) }
     }
 
-    fun onSlideshowVisible(source: String, visible: Boolean) {
-        synchronized(showing) {
-            if (visible) showing += source else showing -= source
+    // Called on the main thread by each slideshow as it appears, goes under
+    // the night cover or back, and goes away
+    fun onSlideshowShown(source: String, shown: Boolean, dark: Boolean) {
+        if (!shown) {
+            showing.remove(source)
+        } else {
+            // Going dark and back leaves it where it was in the order
+            showing[source] = dark
+            // Our screensaver only runs as one
+            if (source == SCREENSAVER) dreaming = true
         }
-        publishSlideshowActive()
-        publishOccupancy()
+        publishState()
     }
 
-    // Handing over between the home screen and the screensaver stops one and
-    // starts the other, which is two calls saying the same thing
-    private fun publishSlideshowActive(force: Boolean = false) {
-        val active = synchronized(showing) { showing.isNotEmpty() }
-        if (!force && active == lastSlideshowActive) return
-        lastSlideshowActive = active
-        publish("state/slideshow_active", JSONObject().put("active", active))
+    // Called on the main thread with what is wrong with `source`, or null once
+    // it works again
+    fun setError(source: String, message: String?) {
+        if (message == null) errors.remove(source) else errors[source] = message
+        publishState()
     }
+
+    // Called on the main thread when something the report reads changed
+    // without telling it, such as the album filter
+    fun refresh() = publishState()
 
     // The picture on screen. info is null while its metadata hasn't arrived.
     //
@@ -249,43 +325,59 @@ class StateReporter private constructor(private val context: Context) {
     // device has this prefix, and we stay off the broker and say so. An empty
     // or missing record is free, which is also how to hand a prefix over.
     //
+    // It reads everything retained under the prefix while it's there, and
+    // returns what isn't ours any more (topics an older version published, a
+    // retained command) for connect() to clear. MQTT has no way to delete by
+    // wildcard: a retained message only goes when an empty one replaces it,
+    // topic by topic.
+    //
     // It looks on a connection of its own, with no last will: the real
     // connection carries our offline record as its will, and if that
     // connection dropped while we looked, the broker would publish it over
     // the other device's record.
     //
-    // Blocks, so it runs on the scope. False also when the broker can't be
-    // reached, which it reports the same way connect() would.
-    private fun prefixIsFree(settings: MqttSettings): Boolean {
+    // Blocks, so it runs on the scope. Null when the prefix is taken, and also
+    // when the broker can't be reached, which it reports the same way
+    // connect() would.
+    private fun checkPrefix(settings: MqttSettings): Set<String>? {
         val topic = settings.topicPrefix + "state/bridge"
         val probe = try {
             MqttClient("tcp://${settings.host}:${settings.port}", "${settings.clientId}-check", MemoryPersistence())
         } catch (e: MqttException) {
             Log.w(TAG, "Can't connect to ${settings.host}:${settings.port}", e)
             cantConnect(settings, e)
-            return false
+            return null
         }
         // Covers the CONNACK too, which connectionTimeout doesn't (see
         // watchConnect)
         probe.timeToWait = CONNECT_GIVE_UP_MILLIS
-        val retained = CompletableFuture<ByteArray>()
+        val retained = ConcurrentHashMap<String, ByteArray>()
+        val lastArrival = AtomicLong(0)
         try {
             probe.connect(connectOptions(settings))
-            probe.subscribe(topic, QOS) { _, message ->
-                if (message.isRetained) retained.complete(message.payload)
+            probe.subscribe(settings.topicPrefix + "#", QOS) { t, message ->
+                if (message.isRetained && message.payload.isNotEmpty()) {
+                    retained[t] = message.payload
+                    lastArrival.set(SystemClock.elapsedRealtime())
+                }
             }
-            // The broker sends a retained message straight after the
-            // subscription, so a short wait is enough to say there is none
-            val record = try {
-                retained.get(RETAINED_WAIT_MILLIS, TimeUnit.MILLISECONDS)
-            } catch (e: TimeoutException) {
-                null
+            // The broker sends the retained messages straight after the
+            // subscription, all together, so a short wait is enough to say
+            // there are none, and a short quiet spell that there are no more
+            val start = SystemClock.elapsedRealtime()
+            while (true) {
+                val now = SystemClock.elapsedRealtime()
+                val last = lastArrival.get()
+                if (now - start >= RETAINED_WAIT_MILLIS) break
+                if (last != 0L && now - last >= RETAINED_QUIET_MILLIS) break
+                Thread.sleep(RETAINED_POLL_MILLIS)
             }
-            val owner = otherOwner(record) ?: return true
+            val owner = otherOwner(retained[topic])
+            if (owner == null) return retained.keys - ourTopics(settings)
             Log.w(TAG, "${settings.topicPrefix} belongs to $owner, not connecting")
             refused = settings
             setAlert(context.getString(R.string.mqtt_alert_prefix_taken, settings.topicPrefix, owner, topic))
-            return false
+            return null
         } catch (e: MqttException) {
             Log.w(TAG, "Can't check ${settings.host}:${settings.port} for $topic", e)
             if (e.reasonCode == MqttException.REASON_CODE_CLIENT_TIMEOUT.toInt()) {
@@ -293,7 +385,7 @@ class StateReporter private constructor(private val context: Context) {
             } else {
                 cantConnect(settings, e)
             }
-            return false
+            return null
         } finally {
             try {
                 if (probe.isConnected) probe.disconnect() else probe.disconnectForcibly(0, 0)
@@ -320,7 +412,14 @@ class StateReporter private constructor(private val context: Context) {
             .ifBlank { context.getString(R.string.mqtt_prefix_owner_unknown) }
     }
 
-    private fun connect(settings: MqttSettings) {
+    // What we publish, which connect() republishes rather than clears
+    private fun ourTopics(settings: MqttSettings): Set<String> =
+        listOf("state", "state/bridge", "state/displayed_photo").map { settings.topicPrefix + it }.toSet()
+
+    // `stale` is what checkPrefix found retained that we don't publish any
+    // more; it's cleared once, on the first connect, not on every reconnect
+    private fun connect(settings: MqttSettings, stale: Set<String>) {
+        var toClear = stale
         val options = connectOptions(settings).apply {
             isAutomaticReconnect = true
             // Latched at connect time: the broker publishes this if we vanish
@@ -345,6 +444,8 @@ class StateReporter private constructor(private val context: Context) {
                     setAlert(null)
                     subscribeToCommands()
                     publishEverything()
+                    for (t in toClear) clearRetained(t)
+                    toClear = emptySet()
                 }
 
                 override fun connectionLost(cause: Throwable?) {
@@ -436,7 +537,6 @@ class StateReporter private constructor(private val context: Context) {
     }
 
     private fun disconnect() {
-        occupancyJob?.cancel()
         connectWatchdog?.cancel()
         connectJob?.cancel()
         val old = client ?: return
@@ -537,10 +637,15 @@ class StateReporter private constructor(private val context: Context) {
         when (command) {
             // The screen doesn't belong to the slideshow, and these have to work
             // even when nothing is on screen
-            Command.ForceOn -> ScreenControl.forceScreenOn(context, FORCE_ON_MILLIS)
+            Command.ForceOn -> {
+                forcedOff = false
+                ScreenControl.forceScreenOn(context, FORCE_ON_MILLIS)
+            }
             Command.ForceOff -> {
                 ScreenControl.releaseForcedOn()
                 if (ScreenControl.canTurnScreenOff(context)) {
+                    forcedOff = true
+                    publishState()
                     ScreenControl.turnScreenOff(context)
                 } else {
                     // Needs the device admin from the System tab
@@ -580,52 +685,207 @@ class StateReporter private constructor(private val context: Context) {
     // Everything a late subscriber should see, published on every connect
     private fun publishEverything() {
         publish("state/bridge", bridgePayload(online = true))
-        publishSlideshowActive(force = true)
         displayedPhoto?.let { publish("state/displayed_photo", it) }
-        publishOccupancy(force = true)
-        startOccupancyUpdates()
+        mainThread.post { publishState(force = true) }
     }
 
-    // The spec's occupancy record. `ts` is what tells a consumer how fresh this
-    // is, so it's refreshed on a timer even when the guess doesn't change.
-    private fun publishOccupancy(force: Boolean = false) {
-        val screensaverAfter = AndroidSettings.System.getInt(
-            context.contentResolver, AndroidSettings.System.SCREEN_OFF_TIMEOUT, -1
-        ).toLong()
-        val guess = Occupancy.guess(screenOn, SystemClock.elapsedRealtime() - screenChangedAt, screensaverAfter)
-        if (!force && guess == lastGuess) return
-        lastGuess = guess
-        publish(
-            "state/occupancy",
-            JSONObject()
-                .put("occupied", guess.occupied)
-                .put("ts", System.currentTimeMillis() / 1000)
-                // Not in the spec: says how much the guess is worth, since
-                // there's no real sensor behind it
-                .put("source", guess.source)
+    // Publishes <prefix>state if anything in it changed. Also works out when
+    // it could next change with nobody saying so (a hold timing out, the
+    // screen staying on long enough to mean presence, the night starting or
+    // ending), and looks again then.
+    //
+    // Changes are gathered for a moment first: handing over between the home
+    // screen and the screensaver is several of them within a few
+    // milliseconds, which would otherwise be as many records, the ones in
+    // between saying nothing is on screen.
+    private fun publishState(force: Boolean = false, now: Boolean = force) {
+        if (!now) {
+            mainThread.removeCallbacks(publishNow)
+            mainThread.postDelayed(publishNow, GATHER_MILLIS)
+            return
+        }
+        mainThread.removeCallbacks(publishNow)
+        publishStateNow(force)
+    }
+
+    private fun publishStateNow(force: Boolean) {
+        val now = SystemClock.elapsedRealtime()
+        val state = stateJson(now)
+        scheduleRecheck(now)
+        val text = state.toString()
+        if (!force && text == lastState) return
+        lastState = text
+        publish("state", state.put("ts", System.currentTimeMillis() / 1000))
+    }
+
+    // Everything but the timestamp, so two records can be compared. Unknown
+    // is null rather than left out, so a consumer can tell it from a field
+    // this version doesn't send.
+    private fun stateJson(now: Long): JSONObject {
+        val slideshow = SlideshowState.shared
+        val hold = ScreenControl.hold()
+        val wish = DeviceState.screenWish(hold?.reason, forcedOff, slideshow.nightRuleApplies(context, now))
+        val guess = Occupancy.guess(screenOn, now - screenChangedAt, screensaverAfterMillis())
+        val filter = slideshow.currentSettings?.albumFilter
+
+        return JSONObject()
+            .put("occupancy", JSONObject().put("occupied", guess.occupied).put("source", guess.source))
+            .put(
+                "slideshow",
+                JSONObject()
+                    // Nobody can see a slideshow under the night cover, nor
+                    // the one the system starts while the screen is off
+                    .put("active", screenOn && showing.values.any { dark -> !dark })
+                    .put("shown_in", orNull(showing.keys.lastOrNull()))
+                    .put("night_cover", showing.values.any { dark -> dark })
+                    .put("album_filter", orNull(filter?.let { albumFilterJson(it) }))
+            )
+            .put(
+                "screen",
+                JSONObject()
+                    .put("on", screenOn)
+                    .put("since", orNull(screenOnSince))
+                    .put("screensaver", orNull(dreaming))
+                    .put("wanted", orNull(wish.wanted))
+                    .put("wanted_reason", orNull(wish.reason))
+            )
+            .put("errors", JSONArray().apply {
+                for ((source, message) in errors) put(JSONObject().put("source", source).put("message", message))
+            })
+            // A Portal without a battery reports one that is absent and empty
+            .put("battery", orNull(battery?.takeIf { it.present }?.let { batteryJson(it) }))
+            .put("wifi_rssi", orNull(rssi?.toInt()))
+            .put("light_lux", orNull(lux?.toInt()))
+            .put(
+                "app",
+                JSONObject()
+                    .put("version", BuildConfig.VERSION_NAME)
+                    .put("version_code", BuildConfig.VERSION_CODE)
+                    // Timestamps rather than uptimes, which would change on
+                    // every look
+                    .put("started_at", startedAt)
+                    .put("device_booted_at", bootedAt)
+            )
+    }
+
+    private fun scheduleRecheck(now: Long) {
+        val slideshow = SlideshowState.shared
+        val screensaverAfter = screensaverAfterMillis()
+        val deadlines = listOfNotNull(
+            ScreenControl.hold()?.until,
+            // When an untouched screen would have slept, if it's still on
+            if (screenOn && screensaverAfter > 0) screenChangedAt + screensaverAfter else null,
+            slideshow.nightGraceEndsAt,
+            // The night rule starts and ends on the hour
+            now + millisToNextHour(Instant.now(), ZoneId.systemDefault()),
+        ).filter { it > now }
+        mainThread.removeCallbacks(recheck)
+        // A moment late, so whatever was due is past rather than a millisecond short
+        deadlines.minOrNull()?.let { mainThread.postDelayed(recheck, it - now + RECHECK_SLACK_MILLIS) }
+    }
+
+    private fun screensaverAfterMillis(): Long = AndroidSettings.System.getInt(
+        context.contentResolver, AndroidSettings.System.SCREEN_OFF_TIMEOUT, -1
+    ).toLong()
+
+    // In the same field names set_album_filter takes, as the spec's
+    // state/album_filter has them
+    private fun albumFilterJson(filter: AlbumFilter) = JSONObject()
+        .put("name", filter.include)
+        .put("exclude", filter.exclude)
+        .put("from_year", filter.fromYear)
+        .put("to_year", filter.toYear)
+
+    private fun batteryJson(b: Battery) = JSONObject()
+        .put("level", orNull(b.level))
+        .put("status", b.status)
+        .put("plugged", b.plugged)
+        .put("health", b.health)
+        .put("technology", orNull(b.technology))
+        .put("temperature_c", orNull(b.temperatureC?.toDouble()))
+        .put("voltage_v", orNull(b.voltageV?.toDouble()))
+
+    // The battery broadcast comes with every millivolt, so the temperature and
+    // the voltage keep what was last published until they move enough
+    private fun readBattery(intent: Intent): Battery {
+        val level = intent.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
+        val scale = intent.getIntExtra(BatteryManager.EXTRA_SCALE, -1)
+        val tenthsC = intent.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE)
+        val millivolts = intent.getIntExtra(BatteryManager.EXTRA_VOLTAGE, -1)
+        val temperature = if (tenthsC == Int.MIN_VALUE) null else tenthsC / 10f
+        val voltage = if (millivolts <= 0) null else millivolts / 1000f
+        val old = battery
+        return Battery(
+            level = if (level >= 0 && scale > 0) level * 100 / scale else null,
+            status = when (intent.getIntExtra(BatteryManager.EXTRA_STATUS, -1)) {
+                BatteryManager.BATTERY_STATUS_CHARGING -> "charging"
+                BatteryManager.BATTERY_STATUS_DISCHARGING -> "discharging"
+                BatteryManager.BATTERY_STATUS_NOT_CHARGING -> "not_charging"
+                BatteryManager.BATTERY_STATUS_FULL -> "full"
+                else -> "unknown"
+            },
+            plugged = when (intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)) {
+                BatteryManager.BATTERY_PLUGGED_AC -> "ac"
+                BatteryManager.BATTERY_PLUGGED_USB -> "usb"
+                BatteryManager.BATTERY_PLUGGED_WIRELESS -> "wireless"
+                0 -> "none"
+                else -> "other"
+            },
+            health = when (intent.getIntExtra(BatteryManager.EXTRA_HEALTH, -1)) {
+                BatteryManager.BATTERY_HEALTH_GOOD -> "good"
+                BatteryManager.BATTERY_HEALTH_OVERHEAT -> "overheat"
+                BatteryManager.BATTERY_HEALTH_DEAD -> "dead"
+                BatteryManager.BATTERY_HEALTH_OVER_VOLTAGE -> "over_voltage"
+                BatteryManager.BATTERY_HEALTH_UNSPECIFIED_FAILURE -> "failure"
+                BatteryManager.BATTERY_HEALTH_COLD -> "cold"
+                else -> "unknown"
+            },
+            present = intent.getBooleanExtra(BatteryManager.EXTRA_PRESENT, false),
+            technology = intent.getStringExtra(BatteryManager.EXTRA_TECHNOLOGY)?.takeIf { it.isNotBlank() },
+            temperatureC = if (DeviceState.significant(old?.temperatureC, temperature, TEMPERATURE_STEP_C)) {
+                temperature
+            } else {
+                old?.temperatureC
+            },
+            voltageV = if (DeviceState.significant(old?.voltageV, voltage, VOLTAGE_STEP_V)) voltage else old?.voltageV,
         )
     }
 
-    private fun startOccupancyUpdates() {
-        occupancyJob?.cancel()
-        occupancyJob = scope.launch {
-            while (true) {
-                delay(OCCUPANCY_REFRESH_MILLIS)
-                publishOccupancy(force = true)
-            }
-        }
+    // The signal of the Wi-Fi network the device is on, or null if it isn't
+    // on one
+    @Suppress("DEPRECATION") // The replacement needs a network callback, and API 29 has no other way to get it
+    private fun readRssi(): Float? {
+        val wifi = context.applicationContext.getSystemService(WifiManager::class.java) ?: return null
+        val info = wifi.connectionInfo ?: return null
+        if (info.networkId == -1 || info.rssi <= NO_RSSI) return null
+        return info.rssi.toFloat()
     }
 
-    private fun watchScreen() {
-        if (watchingScreen) return
-        watchingScreen = true
+    // Everything the report reads that the system announces. Registered once,
+    // for the life of the process, since it all runs on the main thread and
+    // costs nothing while nothing changes.
+    private fun watchDevice() {
+        if (watchingDevice) return
+        watchingDevice = true
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_DREAMING_STARTED)
+            addAction(Intent.ACTION_DREAMING_STOPPED)
+            addAction(Intent.ACTION_BATTERY_CHANGED)
+            addAction(WifiManager.RSSI_CHANGED_ACTION)
+            addAction(WifiManager.NETWORK_STATE_CHANGED_ACTION)
         }
         // Only the system sends these, and an app that targets Android 14 has
-        // to say so explicitly
-        ContextCompat.registerReceiver(context, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        // to say so explicitly. The battery broadcast is sticky, so this also
+        // returns the current reading.
+        ContextCompat.registerReceiver(context, deviceReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            ?.let { battery = readBattery(it) }
+        rssi = readRssi()
+        val sensors = context.getSystemService(SensorManager::class.java)
+        sensors?.getDefaultSensor(Sensor.TYPE_LIGHT)?.let {
+            sensors.registerListener(lightListener, it, SensorManager.SENSOR_DELAY_NORMAL)
+        }
     }
 
     private fun bridgePayload(online: Boolean): JSONObject {
@@ -659,6 +919,21 @@ class StateReporter private constructor(private val context: Context) {
         null
     }
 
+    private fun orNull(value: Any?): Any = value ?: JSONObject.NULL
+
+    private fun clearRetained(topic: String) {
+        val current = client ?: return
+        Log.i(TAG, "Clearing the retained $topic")
+        scope.launch {
+            try {
+                if (!current.isConnected) return@launch
+                current.publish(topic, ByteArray(0), QOS, true)
+            } catch (e: MqttException) {
+                Log.w(TAG, "Can't clear $topic", e)
+            }
+        }
+    }
+
     private fun publish(topicSuffix: String, payload: JSONObject) {
         val settings = settings ?: return
         val current = client ?: return
@@ -686,7 +961,20 @@ class StateReporter private constructor(private val context: Context) {
         // How long the prefix check waits for a retained record after
         // subscribing, before deciding there is none
         private const val RETAINED_WAIT_MILLIS = 2_000L
-        private const val OCCUPANCY_REFRESH_MILLIS = 60_000L
+        // ...and how long without another one before deciding that was all
+        private const val RETAINED_QUIET_MILLIS = 300L
+        private const val RETAINED_POLL_MILLIS = 50L
+        // How far a reading has to move before the state is published again
+        private const val RSSI_STEP_DBM = 5f
+        // A dark room reads anything from 0 to 3 lx from one second to the next
+        private const val LUX_STEP = 5f
+        private const val LUX_STEP_FRACTION = 0.25f
+        private const val TEMPERATURE_STEP_C = 1f
+        private const val VOLTAGE_STEP_V = 0.05f
+        // What WifiManager reports for no signal at all
+        private const val NO_RSSI = -127
+        private const val RECHECK_SLACK_MILLIS = 500L
+        private const val GATHER_MILLIS = 300L
         // How long force_on holds the screen before the usual timeouts resume
         private const val FORCE_ON_MILLIS = 30 * 60 * 1000L
         // How long an announcement that failed says so on screen
@@ -695,6 +983,11 @@ class StateReporter private constructor(private val context: Context) {
         private const val DEFAULT_ANNOUNCE_VOLUME = 40
         // How long an audio announcement's text stays after the audio ends
         private const val ANNOUNCE_AUDIO_LINGER_SECONDS = 10
+
+        // The names the slideshows report themselves by, which the state
+        // publishes as `shown_in`
+        const val HOME = "home"
+        const val SCREENSAVER = "screensaver"
 
         @Volatile
         private var instance: StateReporter? = null
