@@ -83,6 +83,9 @@ class StateReporter private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val powerManager = context.getSystemService(PowerManager::class.java)
 
+    // From connect() until it is replaced or given up on, connected or not:
+    // Paho keeps reconnecting one that has connected before
+    @Volatile
     private var client: MqttAsyncClient? = null
     private val mainThread = Handler(Looper.getMainLooper())
     // The slideshow currently on screen, which carries out its commands
@@ -195,7 +198,11 @@ class StateReporter private constructor(private val context: Context) {
     // effect without a restart.
     fun applySettings() {
         val newSettings = MqttSettings.load(context)
-        if (newSettings == settings && (client?.isConnected == true || connectJob?.isActive == true)) return
+        // The home screen and the screensaver both call this as they appear,
+        // often while the first connect is still under way. Replacing a client
+        // that is still connecting used to leave it running, and two clients
+        // with one client id take turns kicking each other off the broker.
+        if (newSettings == settings && (client != null || connectJob?.isActive == true)) return
         if (newSettings == refused) return
         settings = newSettings
         disconnect()
@@ -327,9 +334,9 @@ class StateReporter private constructor(private val context: Context) {
     //
     // It reads everything retained under the prefix while it's there, and
     // returns what isn't ours any more (topics an older version published, a
-    // retained command) for connect() to clear. MQTT has no way to delete by
-    // wildcard: a retained message only goes when an empty one replaces it,
-    // topic by topic.
+    // retained command; see RetainedTopics) for connect() to clear. If the
+    // device was renamed since it last connected, it also returns what it
+    // left under the old prefix (see leftUnder).
     //
     // It looks on a connection of its own, with no last will: the real
     // connection carries our offline record as its will, and if that
@@ -351,29 +358,16 @@ class StateReporter private constructor(private val context: Context) {
         // Covers the CONNACK too, which connectionTimeout doesn't (see
         // watchConnect)
         probe.timeToWait = CONNECT_GIVE_UP_MILLIS
-        val retained = ConcurrentHashMap<String, ByteArray>()
-        val lastArrival = AtomicLong(0)
         try {
             probe.connect(connectOptions(settings))
-            probe.subscribe(settings.topicPrefix + "#", QOS) { t, message ->
-                if (message.isRetained && message.payload.isNotEmpty()) {
-                    retained[t] = message.payload
-                    lastArrival.set(SystemClock.elapsedRealtime())
-                }
-            }
-            // The broker sends the retained messages straight after the
-            // subscription, all together, so a short wait is enough to say
-            // there are none, and a short quiet spell that there are no more
-            val start = SystemClock.elapsedRealtime()
-            while (true) {
-                val now = SystemClock.elapsedRealtime()
-                val last = lastArrival.get()
-                if (now - start >= RETAINED_WAIT_MILLIS) break
-                if (last != 0L && now - last >= RETAINED_QUIET_MILLIS) break
-                Thread.sleep(RETAINED_POLL_MILLIS)
-            }
+            val prefix = settings.topicPrefix
+            val retained = retainedUnder(probe, prefix)
             val owner = otherOwner(retained[topic])
-            if (owner == null) return retained.keys - ourTopics(settings)
+            if (owner == null) {
+                val stale = RetainedTopics.toClear(retained.keys, prefix, keep = RetainedTopics.ours(prefix))
+                val old = MqttSettings.previousPrefix(context, settings) ?: return stale
+                return stale + leftUnder(probe, old, prefix)
+            }
             Log.w(TAG, "${settings.topicPrefix} belongs to $owner, not connecting")
             refused = settings
             setAlert(context.getString(R.string.mqtt_alert_prefix_taken, settings.topicPrefix, owner, topic))
@@ -396,6 +390,46 @@ class StateReporter private constructor(private val context: Context) {
         }
     }
 
+    // Everything retained under `prefix`, by topic. Blocks.
+    private fun retainedUnder(probe: MqttClient, prefix: String): Map<String, ByteArray> {
+        val retained = ConcurrentHashMap<String, ByteArray>()
+        val lastArrival = AtomicLong(0)
+        probe.subscribe(prefix + "#", QOS) { t, message ->
+            if (message.isRetained && message.payload.isNotEmpty()) {
+                retained[t] = message.payload
+                lastArrival.set(SystemClock.elapsedRealtime())
+            }
+        }
+        // The broker sends the retained messages straight after the
+        // subscription, all together, so a short wait is enough to say there
+        // are none, and a short quiet spell that there are no more
+        val start = SystemClock.elapsedRealtime()
+        while (true) {
+            val now = SystemClock.elapsedRealtime()
+            val last = lastArrival.get()
+            if (now - start >= RETAINED_WAIT_MILLIS) break
+            if (last != 0L && now - last >= RETAINED_QUIET_MILLIS) break
+            Thread.sleep(RETAINED_POLL_MILLIS)
+        }
+        probe.unsubscribe(prefix + "#")
+        return retained
+    }
+
+    // What this device left under the prefix it used before being renamed,
+    // to be cleared with the rest. Nothing if someone else has that prefix
+    // now: what is there is theirs. The old connection was closed cleanly, so
+    // the broker didn't publish its last will, and its state/bridge still says
+    // online until this clears it.
+    private fun leftUnder(probe: MqttClient, oldPrefix: String, newPrefix: String): Set<String> {
+        val retained = retainedUnder(probe, oldPrefix)
+        val owner = otherOwner(retained[oldPrefix + "state/bridge"])
+        if (owner != null) {
+            Log.i(TAG, "$oldPrefix belongs to $owner now, leaving it alone")
+            return emptySet()
+        }
+        return RetainedTopics.toClear(retained.keys, oldPrefix, skipPrefix = newPrefix)
+    }
+
     // Who a retained state/bridge record says it belongs to, as its hostname
     // or machine id, or null if it is ours or nobody's. A record that doesn't
     // say whose it is still means some device publishes there.
@@ -411,10 +445,6 @@ class StateReporter private constructor(private val context: Context) {
         return json.optString("hostname").ifBlank { machineId }
             .ifBlank { context.getString(R.string.mqtt_prefix_owner_unknown) }
     }
-
-    // What we publish, which connect() republishes rather than clears
-    private fun ourTopics(settings: MqttSettings): Set<String> =
-        listOf("state", "state/bridge", "state/displayed_photo").map { settings.topicPrefix + it }.toSet()
 
     // `stale` is what checkPrefix found retained that we don't publish any
     // more; it's cleared once, on the first connect, not on every reconnect
@@ -439,13 +469,17 @@ class StateReporter private constructor(private val context: Context) {
             )
             newClient.setCallback(object : MqttCallbackExtended {
                 override fun connectComplete(reconnect: Boolean, serverUri: String?) {
+                    // One replaced while it connected; it's being shut down
+                    if (client !== newClient) return
                     Log.i(TAG, "Connected to $serverUri")
                     connectWatchdog?.cancel()
                     setAlert(null)
                     subscribeToCommands()
                     publishEverything()
-                    for (t in toClear) clearRetained(t)
+                    for (t in toClear) clearRetained(newClient, t)
                     toClear = emptySet()
+                    // Whatever was under an older prefix is gone now
+                    MqttSettings.notePublished(context, settings)
                 }
 
                 override fun connectionLost(cause: Throwable?) {
@@ -472,8 +506,12 @@ class StateReporter private constructor(private val context: Context) {
                 override fun onSuccess(asyncActionToken: IMqttToken?) = Unit
 
                 override fun onFailure(asyncActionToken: IMqttToken?, e: Throwable?) {
+                    if (client !== newClient) return
                     Log.w(TAG, "Can't connect to ${settings.host}:${settings.port}", e)
                     cantConnect(settings, e)
+                    // Paho won't try again, so the next applySettings() has
+                    // to start a new one
+                    giveUp(newClient)
                 }
             })
             watchConnect(newClient, settings)
@@ -500,10 +538,32 @@ class StateReporter private constructor(private val context: Context) {
             setAlert(
                 context.getString(R.string.mqtt_alert_no_answer, settings.host, settings.port)
             )
+            giveUp(newClient)
+        }
+    }
+
+    // Forgets a client that isn't going anywhere, so applySettings() starts
+    // afresh
+    private fun giveUp(stuck: MqttAsyncClient) {
+        if (client === stuck) client = null
+        shutDown(stuck)
+    }
+
+    // Stops a client for good, whatever state it is in. Plain disconnect()
+    // only works on a connected one, and close() refuses one that is still
+    // connecting, which then carried on and connected anyway. A connected
+    // one still says goodbye, so the broker doesn't publish its last will.
+    private fun shutDown(old: MqttAsyncClient) {
+        scope.launch {
             try {
-                newClient.disconnectForcibly(0, 0)
+                old.disconnectForcibly(QUIESCE_MILLIS, DISCONNECT_MILLIS)
             } catch (e: MqttException) {
-                Log.w(TAG, "Can't drop the stuck connection", e)
+                Log.w(TAG, "Can't disconnect", e)
+            }
+            try {
+                old.close()
+            } catch (e: MqttException) {
+                Log.w(TAG, "Can't close the connection", e)
             }
         }
     }
@@ -541,14 +601,7 @@ class StateReporter private constructor(private val context: Context) {
         connectJob?.cancel()
         val old = client ?: return
         client = null
-        scope.launch {
-            try {
-                if (old.isConnected) old.disconnect()
-                old.close()
-            } catch (e: MqttException) {
-                Log.w(TAG, "Can't close the connection", e)
-            }
-        }
+        shutDown(old)
     }
 
     // Turns one message into a command and hands it to whoever carries it out.
@@ -921,13 +974,14 @@ class StateReporter private constructor(private val context: Context) {
 
     private fun orNull(value: Any?): Any = value ?: JSONObject.NULL
 
-    private fun clearRetained(topic: String) {
-        val current = client ?: return
+    // On the client that just connected, which may not be `client` by the
+    // time this runs
+    private fun clearRetained(via: MqttAsyncClient, topic: String) {
         Log.i(TAG, "Clearing the retained $topic")
         scope.launch {
             try {
-                if (!current.isConnected) return@launch
-                current.publish(topic, ByteArray(0), QOS, true)
+                if (!via.isConnected) return@launch
+                via.publish(topic, ByteArray(0), QOS, true)
             } catch (e: MqttException) {
                 Log.w(TAG, "Can't clear $topic", e)
             }
@@ -964,6 +1018,9 @@ class StateReporter private constructor(private val context: Context) {
         // ...and how long without another one before deciding that was all
         private const val RETAINED_QUIET_MILLIS = 300L
         private const val RETAINED_POLL_MILLIS = 50L
+        // How long a disconnect waits for work in flight, and for the broker
+        private const val QUIESCE_MILLIS = 1_000L
+        private const val DISCONNECT_MILLIS = 2_000L
         // How far a reading has to move before the state is published again
         private const val RSSI_STEP_DBM = 5f
         // A dark room reads anything from 0 to 3 lx from one second to the next

@@ -26,6 +26,9 @@ data class MqttSettings(
 ) {
     val isConfigured: Boolean get() = enabled && host.isNotBlank()
 
+    // Which broker, for telling whether an old prefix was on this one
+    val broker: String get() = "$host:$port"
+
     companion object {
         const val KEY_ENABLED = "mqtt_enabled"
         const val KEY_HOST = "mqtt_host"
@@ -44,6 +47,10 @@ data class MqttSettings(
         // Identifies this device on the broker when there is no ANDROID_ID.
         // Generated once and kept, so it only survives while installed.
         private const val KEY_MACHINE_ID = "mqtt_machine_id"
+        // Where this device last published, as "host:port" and the prefix, so
+        // that a rename can clear what it left under the old name
+        private const val KEY_LAST_BROKER = "mqtt_last_broker"
+        private const val KEY_LAST_PREFIX = "mqtt_last_prefix"
 
         fun load(context: Context): MqttSettings {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
@@ -127,6 +134,23 @@ data class MqttSettings(
             .joinToString("")
             .trim('-')
             .ifEmpty { "portal" }
+
+        // The prefix this device published under before `settings`, on the
+        // same broker, or null if it's the same one or wasn't on this broker.
+        // A different broker is somewhere we can't reach from here, and
+        // whatever is there stays.
+        fun previousPrefix(context: Context, settings: MqttSettings): String? {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            if (prefs.getString(KEY_LAST_BROKER, null) != settings.broker) return null
+            return prefs.getString(KEY_LAST_PREFIX, null)?.takeIf { it != settings.topicPrefix }
+        }
+
+        fun notePublished(context: Context, settings: MqttSettings) {
+            PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putString(KEY_LAST_BROKER, settings.broker)
+                .putString(KEY_LAST_PREFIX, settings.topicPrefix)
+                .apply()
+        }
 
         // Tells this device's records on the broker from anyone else's (see
         // StateReporter's check for a taken prefix). ANDROID_ID is per device

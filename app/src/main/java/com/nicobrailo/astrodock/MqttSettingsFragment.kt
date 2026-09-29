@@ -1,5 +1,6 @@
 package com.nicobrailo.astrodock
 
+import android.content.SharedPreferences
 import android.os.Bundle
 import android.text.InputType
 import android.widget.Toast
@@ -7,10 +8,16 @@ import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
 import com.nicobrailo.astrodock.mqtt.MqttSettings
+import com.nicobrailo.astrodock.mqtt.RetainedTopics
 
 // Where to publish this device's state (see mqtt/StateReporter.kt). The
 // slideshow picks up changes when it next comes to the foreground.
 class MqttSettingsFragment : PreferenceFragmentCompat() {
+    // The topic list depends on the prefix, which is edited on this screen
+    private val prefsListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+        if (key == MqttSettings.KEY_TOPIC_PREFIX) showTopics()
+    }
+
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.mqtt_preferences, rootKey)
 
@@ -44,12 +51,25 @@ class MqttSettingsFragment : PreferenceFragmentCompat() {
             }
         }
 
-        // What the broker will see, with the prefix as it will really be used
-        findPreference<Preference>("mqtt_topics")?.let { preference ->
-            val settings = MqttSettings.load(requireContext())
-            preference.summary = listOf(
-                "state", "state/bridge", "state/displayed_photo"
-            ).joinToString("\n") { settings.topicPrefix + it }
-        }
+        showTopics()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        preferenceManager.sharedPreferences?.registerOnSharedPreferenceChangeListener(prefsListener)
+        // It may have been pushed over adb meanwhile
+        showTopics()
+    }
+
+    override fun onPause() {
+        preferenceManager.sharedPreferences?.unregisterOnSharedPreferenceChangeListener(prefsListener)
+        super.onPause()
+    }
+
+    // What the broker will see, with the prefix as it will really be used
+    private fun showTopics() {
+        val preference = findPreference<Preference>("mqtt_topics") ?: return
+        val settings = MqttSettings.load(requireContext())
+        preference.summary = RetainedTopics.OURS.joinToString("\n") { settings.topicPrefix + it }
     }
 }

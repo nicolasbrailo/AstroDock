@@ -247,7 +247,14 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   `watchConnect` gives it 20s and then drops the stuck client, which is also
   what lets the next `applySettings()` start a fresh one. Paho only reconnects
   by itself once it has connected at least once, so a first connect that fails
-  waits for that call, which every `SlideshowController.start()` makes. The photo payload follows the field names the homeboard's photo
+  waits for that call, which every `SlideshowController.start()` makes.
+  The home screen and the screensaver both make it as they appear, often
+  while the first connect is still under way, so a client counts as current
+  from `connect()` until it's replaced or given up on, connected or not, and
+  a replaced one is stopped with `disconnectForcibly` (`shutDown`): `close()`
+  refuses a client that is still connecting, which then connected anyway, and
+  two clients with one client id kick each other off the broker every second
+  or so for as long as the process lives. Measured 2026-09-29 after a rename. The photo payload follows the field names the homeboard's photo
   provider publishes (`albumname`, `albumpath`, `filename`, `local_path`,
   `src_url`, `gps`, `reverse_geo`, `EXIF DateTimeOriginal`), so one renderer
   reads either device. Immich has no albums on disk, so `albumname` is the
@@ -302,11 +309,20 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   doesn't try those settings again until they change or the app restarts.
   That check subscribes to `<prefix>#`, so it also sees everything else
   retained there, and once the prefix is ours, the first connect clears what
-  we don't publish (topics from older versions, retained commands) by
-  publishing an empty retained message to each: MQTT can't delete by
-  wildcard. The three topics we publish are left to be replaced, not cleared.
-  It stops listening 300ms after the last retained message, or after 2s if
-  there are none. An
+  we don't publish by publishing an empty retained message to each: MQTT
+  can't delete by wildcard. Only `state`, `state/...` and `cmd/...` are
+  cleared (`RetainedTopics`, unit tested), because a prefix like `home/` also
+  matches another device under `home/kitchen/`; the three topics we publish
+  are left to be replaced. It stops listening 300ms after the last retained
+  message, or after 2s if there are none. A rename clears the old prefix
+  too: every connect stores the broker and prefix it published under
+  (`MqttSettings.notePublished`), and a check that finds a different prefix
+  stored for the same broker also reads the old one and clears our topics
+  there, unless its `state/bridge` now belongs to another device. That
+  matters because the old connection closes cleanly, so its last will never
+  fires and the old `state/bridge` would say online for ever. A prefix on
+  another broker is left alone. Measured 2026-09-29: portaloft to
+  portaloft-test and back, each leaving the old prefix empty. An
   empty record is free: `mosquitto_pub -r -n -t <prefix>state/bridge` hands a
   prefix over. `machine_id` is `ANDROID_ID` (a generated UUID only without
   one), because it has to survive a reinstall: a device with a new id would
