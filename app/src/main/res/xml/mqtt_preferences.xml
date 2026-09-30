@@ -54,4 +54,19 @@
             app:summary="@string/mqtt_audio_announcements_summary"
             app:title="@string/mqtt_audio_announcements" />
     </PreferenceCategory>
+
+    <!-- Keys must match call/CallSettings.kt -->
+    <PreferenceCategory app:title="@string/mqtt_category_calls">
+        <SwitchPreferenceCompat
+            app:defaultValue="false"
+            app:key="calls_enabled"
+            app:summary="@string/calls_enabled_summary"
+            app:title="@string/calls_enabled" />
+        <!-- Summary is set in code, to say what empty means -->
+        <EditTextPreference
+            app:dependency="calls_enabled"
+            app:dialogMessage="@string/calls_allowed_hint"
+            app:key="calls_allowed"
+            app:title="@string/calls_allowed" />
+    </PreferenceCategory>
 </PreferenceScreen>

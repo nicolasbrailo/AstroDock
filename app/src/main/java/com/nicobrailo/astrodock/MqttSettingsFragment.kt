@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.preference.EditTextPreference
 import androidx.preference.Preference
 import androidx.preference.PreferenceFragmentCompat
+import com.nicobrailo.astrodock.call.CallSettings
 import com.nicobrailo.astrodock.mqtt.MqttSettings
 import com.nicobrailo.astrodock.mqtt.RetainedTopics
 
@@ -49,6 +50,11 @@ class MqttSettingsFragment : PreferenceFragmentCompat() {
                 val set = !(pref as EditTextPreference).text.isNullOrBlank()
                 getString(if (set) R.string.settings_api_key_set else R.string.settings_api_key_not_set)
             }
+        }
+
+        findPreference<EditTextPreference>(CallSettings.KEY_ALLOWED)?.setSummaryProvider { pref ->
+            (pref as EditTextPreference).text?.takeIf { it.isNotBlank() }
+                ?: getString(R.string.calls_allowed_anyone)
         }
 
         showTopics()

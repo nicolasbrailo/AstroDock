@@ -1,5 +1,6 @@
 package com.nicobrailo.astrodock.mqtt
 
+import com.nicobrailo.astrodock.call.CallVerb
 import com.nicobrailo.astrodock.immich.AlbumFilter
 
 // The commands from the homeboard bridge's spec that mean something here.
@@ -8,7 +9,9 @@ import com.nicobrailo.astrodock.immich.AlbumFilter
 // set_target_size) belong to the homeboard's own renderer and are dropped.
 // One of these is not from the spec: set_album_filter, which chooses the albums
 // the slideshow takes pictures from (see AlbumFilter). The homeboard reads its
-// pictures from disk, so it has nothing to say about Immich albums.
+// pictures from disk, so it has nothing to say about Immich albums. The call
+// ones aren't from the spec either: they are how two devices set up a call
+// (see call/Calls.kt and CALLING.md).
 sealed interface Command {
     object Next : Command
     object Previous : Command
@@ -28,6 +31,18 @@ sealed interface Command {
     data class AnnounceAudio(val uri: String, val message: String?, val volumePercent: Int) : Command
     // The whole filter, so whatever the payload leaves out is cleared
     data class SetAlbumFilter(val filter: AlbumFilter) : Command
+    // A message from another device about a call. Every one has the call's
+    // id; an offer also has who is calling (`from`, their prefix), when
+    // (`sentAt`, seconds) and `sdp`, an answer has `sdp`, and a rejection
+    // `reason`.
+    data class CallSignal(
+        val verb: CallVerb,
+        val callId: String,
+        val from: String? = null,
+        val sentAt: Long? = null,
+        val sdp: String? = null,
+        val reason: String? = null,
+    ) : Command
 }
 
 // Which command a topic asks for. The payload is parsed separately, because
@@ -41,6 +56,10 @@ enum class CommandKind {
     ANNOUNCE,
     ANNOUNCE_AUDIO,
     ALBUM_FILTER,
+    CALL_OFFER,
+    CALL_ANSWER,
+    CALL_REJECT,
+    CALL_HANGUP,
 }
 
 object Commands {
@@ -58,6 +77,10 @@ object Commands {
             "cmd/ambience/announce" -> CommandKind.ANNOUNCE
             "cmd/ambience/announce_audio" -> CommandKind.ANNOUNCE_AUDIO
             "cmd/ambience/set_album_filter" -> CommandKind.ALBUM_FILTER
+            "cmd/call/offer" -> CommandKind.CALL_OFFER
+            "cmd/call/answer" -> CommandKind.CALL_ANSWER
+            "cmd/call/reject" -> CommandKind.CALL_REJECT
+            "cmd/call/hangup" -> CommandKind.CALL_HANGUP
             else -> null
         }
     }

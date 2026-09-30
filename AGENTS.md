@@ -23,7 +23,9 @@ it up to date when the design changes.
   `--slide-seconds`, the album filter's `--album-include`,
   `--album-exclude`, `--album-from-year`, `--album-to-year`, the weather's
   `--weather` and `--weather-place`, and the broker's
-  `--mqtt-enabled`, `--mqtt-host`, `--mqtt-port` and `--mqtt-audio-announce`;
+  `--mqtt-enabled`, `--mqtt-host`, `--mqtt-port` and `--mqtt-audio-announce`,
+  and the calls' `--calls-enabled`, which also grants or revokes the camera
+  and the microphone, and `--calls-allowed`;
   `--show` prints what the
   device has, `--help` lists them all). It reads the preferences file off the
   device and only replaces the settings it was given, so the rest are left
@@ -31,6 +33,11 @@ it up to date when the design changes.
   of the MQTT one); `--reset` replaces the whole file instead. Android writes
   one setting per line, which is what makes editing it with `sed` and `awk`
   sound enough for this. Only works with debug builds, since it uses `run-as`.
+- `tools/fake-call-peer.py`: a fake Portal for testing calls without a
+  second one (`uv run tools/fake-call-peer.py --broker HOST:PORT call PREFIX`
+  calls a device, `... listen` advertises itself and answers). It speaks the
+  real protocol with real WebRTC (aiortc) and counts the frames it gets back.
+  See `CALLING.md`.
 - `tools/build-apks.sh [OUT_DIR]`: runs the unit tests, builds both APKs and
   leaves them in `~/Downloads` as `AstroDock-debug.apk` and
   `AstroDock-release.apk`, the names the Apps tab looks for in a GitHub
@@ -239,6 +246,13 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   (`set_svg_overlay`, `set_render_config`, `set_embed_qr`, `set_target_size`)
   are logged and dropped. Retained commands are ignored: they arrive again on
   every reconnect, and acting on them would replay an old command.
+  The `cmd/call/*` commands (`offer`, `answer`, `reject`, `hangup`) go to
+  `CallRouter` (see `call/` below). They are the only ones sent at QoS 1, so
+  `cmd/#` is subscribed at 1; the reporter also sends them to other devices
+  (`sendCall`), and subscribes to `+/availability` to keep every device's
+  record (`callablePeers`), which is the list of devices to call. Our own
+  `availability` record says `calls: true` while calls are on, and is
+  republished when that setting changes.
   Nothing on screen depends on MQTT, so a broker that can't be reached would
   only show up in the log: the reporter therefore keeps an `alert` (the last
   thing that went wrong, null while it's fine) and the home screen shows it in
@@ -275,10 +289,12 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   `screen` (`on`, `since`, `screensaver`, the last of which is any
   screensaver, the Portal's too, and `wanted` plus `wanted_reason`: what the
   app wants the screen to be, `null` when it leaves it to the Portal, which is
-  most of the time. `on` for `force_on` or `install`, `off` for `force_off`
+  most of the time. `on` for `force_on`, `install` or `call`, `off` for `force_off`
   until the screen next comes on, or `night` while the night rule applies.
   `DeviceState.screenWish` holds the order, unit tested. Comparing it with
   `on` shows the Portal waking a screen we want off);
+  `call` (`state`: `idle`, `outgoing`, `incoming` or `in_call`; `with`, the
+  other device's prefix; `since`);
   `errors` (`[{source, message}]`, `immich` and `weather`, cleared once they
   work again); `battery` (level, status, plugged, health, technology,
   temperature and voltage; `null` on a Portal without one); `wifi_rssi`;
@@ -348,12 +364,33 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   so `homeRoleIntent` returns null below that and the home screen settings,
   where the user picks the launcher by hand, are opened instead. An `Item` with
   an `action` instead of an `intent` is one the app can set itself, and its
-  button runs that and rebuilds the list rather than opening anything; high
-  contrast text is the only one.
+  button runs that and rebuilds the list rather than opening anything: high
+  contrast text, and the camera and microphone for calls, which are runtime
+  permissions and so are asked for in a permission dialog rather than a
+  settings screen. They are only listed as missing while calls are on.
 - `TextContrast.kt`: the `high_text_contrast_enabled` switch behind that item.
   It is a secure setting, so it needs the adb grant for
   `WRITE_SECURE_SETTINGS` and does nothing without it, which is why the System
   tab shows the two next to each other. It is the only thing that grant is for.
+- `call/`: calls between Portals, over the MQTT broker, with WebRTC; the
+  protocol, the connectivity and how a call behaves are in `CALLING.md`,
+  which is what to keep up to date when any of that changes. The call runs
+  in its own process (`:call`), so a crash in WebRTC's native code doesn't
+  cost AstroDock the home screen (measured: it doesn't). `CallRouter` (main
+  process) takes or refuses an offer (`Calls.refusal`: off, not on the allow
+  list, no camera or microphone, night, busy), wakes the device, and starts
+  `CallActivity` (`:call`), which does the media (`CallMedia`) and nothing
+  else: everything it sends goes through `CallSignalService` (main process,
+  a bound service with a Messenger, see `CallIpc`), since the main process
+  holds the only MQTT connection. **Nothing in `:call` may touch
+  `StateReporter` or `SlideshowState`**: they'd be second copies, and a second
+  `StateReporter` is a second client with our client id. The activity holds
+  the screen on with its window flag, and hangs up 3s after it stops being
+  in front. `Calls.kt` holds the rules as pure functions, unit tested.
+  `CallSettings` is the MQTT tab's "Calls" section: whether calls are on (off
+  by default) and who may call. The app list's call button (only while calls
+  are on) lists the devices that take calls. There are no ICE servers: every
+  device is on the same network.
 - `UpdateReceiver.kt`: puts things back after the app is updated
   (`MY_PACKAGE_REPLACED`), since an update from the Apps tab has no adb to
   run `tools/setup-device.sh` with. It presses Home, if AstroDock is still the
@@ -599,6 +636,9 @@ documents the API). Keep the two behaving the same.
   `HomeButtonService`), which is off for every app except the ones the launcher
   detects and the ones `HomeButtonApps.ALWAYS` names.
 
+**Calls** between Portals: see `CALLING.md` (the MQTT protocol, how the two
+devices connect, waking up for a call, failures and what the screen says).
+
 **Settings**: server URL, API key (needs `album.read`, `asset.read` and
 `asset.view`), max pictures per album (default 20), percent of each album
 (default 0 = all), seconds per picture (default 30) and whether to show the
@@ -619,7 +659,11 @@ System tab) the night rule can't do anything, so its switch and
 hours are greyed out and the reason is shown in red; this is checked every
 time the tab is resumed, so granting it enables them. The red doesn't show on
 a Portal set up by `tools/setup-device.sh`, whose high contrast text draws
-every string black or white.
+every string black or white. The MQTT tab's "Calls" section: whether this
+device takes part in calls (default off; it then answers every call by
+itself), and who can call it, as comma separated topic prefixes (empty means
+any device on the broker, so the broker's own access control is what really
+decides). Calls are refused while the night rule applies.
 
 **Night screen off** (`SlideshowController.checkNight`). The night rule applies
 while the hour is inside the night window and nothing has touched the slideshow
@@ -780,7 +824,16 @@ the server and sampling settings reset the slideshow.
   1/255 gives `mActualBacklight=1` (`dumpsys display`), which is as dark as the
   screen goes while it is on. After a lock the system also starts the
   screensaver while the screen is still off, so the one the Portal wakes up to
-  is already running.
+  is already running. An app's `ACQUIRE_CAUSES_WAKEUP` wake lock wakes into
+  it too ("Waking up from screen off, start dreaming"), and only a second one
+  ends it, which `CallRouter` does for an incoming call (measured 2026-09-30).
+- **Neither the Portal+ nor the Portal Go has a hardware echo canceller or
+  noise suppressor** for an app (WebRTC logs "HW AEC not supported"), so
+  calls use WebRTC's software ones. Measured 2026-09-30.
+- **On the Portal Go, WebRTC's ICE gathering completes before it knows of any
+  network**, so an offer or answer sent on `COMPLETE` has no address in it
+  and a call from the Go never connects. `CallMedia` gathers continually and
+  waits for a candidate instead (see `CALLING.md`). Measured 2026-09-30.
 - `tools/setup-device.sh` takes no arguments: it applies everything an app can't
   set for itself (home screen, screensaver, the Portal's own screen timers,
   bug pill, app verifier, high contrast text for the install dialog,

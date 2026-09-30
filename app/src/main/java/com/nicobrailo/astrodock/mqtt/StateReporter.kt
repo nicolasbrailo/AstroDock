@@ -24,6 +24,11 @@ import com.nicobrailo.astrodock.ScreenControl
 import com.nicobrailo.astrodock.Settings
 import com.nicobrailo.astrodock.SlideshowState
 import com.nicobrailo.astrodock.audio.AnnouncementPlayer
+import com.nicobrailo.astrodock.call.CallPeer
+import com.nicobrailo.astrodock.call.CallRouter
+import com.nicobrailo.astrodock.call.CallSettings
+import com.nicobrailo.astrodock.call.CallVerb
+import com.nicobrailo.astrodock.call.Calls
 import com.nicobrailo.astrodock.immich.AlbumFilter
 import com.nicobrailo.astrodock.immich.ImmichPictureInfo
 import com.nicobrailo.astrodock.weather.millisToNextHour
@@ -70,7 +75,12 @@ import java.util.concurrent.atomic.AtomicLong
 //
 // It also subscribes to <prefix>cmd/# and carries out the commands that mean
 // something here (see Command.kt): the screen ones itself, the slideshow ones
-// through whichever slideshow is on screen.
+// through whichever slideshow is on screen, and the call ones through
+// CallRouter.
+//
+// It also reads every device's availability record (`+/availability`), which
+// is the list of devices that can be called, and sends the call messages to
+// them (see CALLING.md).
 //
 // Differences from the spec, all because this is a Portal and not the
 // homeboard: there is no `distance_cm` (no mmWave sensor, and occupancy is a
@@ -139,6 +149,11 @@ class StateReporter private constructor(private val context: Context) {
     private var lastState: String? = null
     private val startedAt = System.currentTimeMillis() / 1000
     private val bootedAt = (System.currentTimeMillis() - SystemClock.elapsedRealtime()) / 1000
+    // Every device's availability record, by prefix, ours included
+    private val peers = ConcurrentHashMap<String, CallPeer>()
+    // Whether the availability record we last published said we take calls
+    @Volatile
+    private var advertisedCalls: Boolean? = null
     private val recheck = Runnable { publishState() }
     private val publishNow = Runnable { publishState(force = false, now = true) }
 
@@ -197,6 +212,13 @@ class StateReporter private constructor(private val context: Context) {
     // whenever the slideshow becomes visible, so edits in the MQTT tab take
     // effect without a restart.
     fun applySettings() {
+        // Not part of MqttSettings, since it doesn't need a new connection:
+        // the record only has to say so
+        val calls = CallSettings.load(context).enabled
+        if (advertisedCalls != null && calls != advertisedCalls) {
+            publish(RetainedTopics.AVAILABILITY, availabilityPayload(online = true))
+        }
+
         val newSettings = MqttSettings.load(context)
         // The home screen and the screensaver both call this as they appear,
         // often while the first connect is still under way. Replacing a client
@@ -271,8 +293,42 @@ class StateReporter private constructor(private val context: Context) {
     }
 
     // Called on the main thread when something the report reads changed
-    // without telling it, such as the album filter
+    // without telling it, such as the album filter or a call
     fun refresh() = publishState()
+
+    // Our prefix, which a call offer gives as where to answer, while there is
+    // a connection to answer on
+    val ownPrefix: String?
+        get() = settings?.topicPrefix?.takeIf { client?.isConnected == true }
+
+    // The devices this one can call now (see Calls.callable)
+    fun callablePeers(): List<CallPeer> = Calls.callable(peers.values, settings?.topicPrefix)
+
+    // Whether a screensaver (ours or the Portal's) is running, as far as the
+    // system's broadcasts have said
+    val isDreaming: Boolean get() = dreaming == true
+
+    // Sends a call message to another device: not retained, since a retained
+    // one would come back on every reconnect, and QoS 1, since a lost hangup
+    // would leave a camera on. False if there is no connection to send it on;
+    // a send that fails later only shows in the log, and the call gives up on
+    // its own timeout.
+    fun sendCall(peerPrefix: String, verb: CallVerb, payload: JSONObject): Boolean {
+        val current = client ?: return false
+        if (!current.isConnected) return false
+        val topic = Calls.topic(peerPrefix, verb)
+        scope.launch {
+            try {
+                current.publish(topic, MqttMessage(payload.toString().toByteArray()).apply {
+                    qos = CALL_QOS
+                    isRetained = false
+                })
+            } catch (e: MqttException) {
+                Log.w(TAG, "Can't send $topic", e)
+            }
+        }
+        return true
+    }
 
     // The picture on screen. info is null while its metadata hasn't arrived.
     //
@@ -589,7 +645,12 @@ class StateReporter private constructor(private val context: Context) {
     private fun subscribeToCommands() {
         val settings = settings ?: return
         try {
-            client?.subscribe(settings.topicPrefix + Commands.TOPIC_FILTER, QOS)
+            // QoS 1 so the call messages keep theirs; the rest are sent at 0,
+            // which a subscription can't raise
+            client?.subscribe(settings.topicPrefix + Commands.TOPIC_FILTER, CALL_QOS)
+            // The devices that can be called. One level, like the homeboard's
+            // own listing: a prefix like home/kitchen/ isn't found.
+            client?.subscribe("+/" + RetainedTopics.AVAILABILITY, QOS)
         } catch (e: MqttException) {
             Log.w(TAG, "Can't subscribe to commands", e)
             setAlert(context.getString(R.string.mqtt_alert_subscribe, reason(e)))
@@ -608,6 +669,10 @@ class StateReporter private constructor(private val context: Context) {
     // Bad payloads are dropped with a log line, as the spec says.
     private fun receive(topic: String, message: MqttMessage) {
         val settings = settings ?: return
+        Calls.peerPrefix(topic, RetainedTopics.AVAILABILITY)?.let { prefix ->
+            notePeer(prefix, message.payload)
+            return
+        }
         val kind = Commands.kind(topic, settings.topicPrefix)
         if (kind == null) {
             Log.i(TAG, "Ignoring $topic")
@@ -684,6 +749,52 @@ class StateReporter private constructor(private val context: Context) {
                 )
             }
         }
+        CommandKind.CALL_OFFER -> callSignal(CallVerb.OFFER, payload)
+        CommandKind.CALL_ANSWER -> callSignal(CallVerb.ANSWER, payload)
+        CommandKind.CALL_REJECT -> callSignal(CallVerb.REJECT, payload)
+        CommandKind.CALL_HANGUP -> callSignal(CallVerb.HANGUP, payload)
+    }
+
+    // A device's availability record, or its removal
+    private fun notePeer(prefix: String, payload: ByteArray) {
+        if (payload.isEmpty()) {
+            peers.remove(prefix)
+            return
+        }
+        val json = try {
+            JSONObject(String(payload))
+        } catch (e: JSONException) {
+            Log.i(TAG, "Unreadable availability record under $prefix")
+            return
+        }
+        peers[prefix] = CallPeer(
+            prefix = prefix,
+            online = json.optString("state") == "online",
+            acceptsCalls = json.optBoolean("calls", false),
+        )
+    }
+
+    // {"call_id":"...","from":"kitchen-portal/","ts":1790000000,"sdp":"v=0..."}
+    // for an offer; the others only need what their verb uses. The caller's
+    // prefix is where the replies go, so it must be one we can publish under.
+    private fun callSignal(verb: CallVerb, payload: String): Command? {
+        val json = JSONObject(payload)
+        fun text(key: String): String? = if (json.isNull(key)) null else json.optString(key).ifEmpty { null }
+        val callId = text("call_id")?.trim()?.takeIf { it.length <= MAX_CALL_ID } ?: return null
+        return when (verb) {
+            CallVerb.OFFER -> {
+                val from = text("from")
+                    ?.takeIf { f -> f.none { it == '+' || it == '#' } }
+                    ?.let { MqttSettings.normalizePrefix(it, "") }
+                    ?.ifEmpty { null }
+                    ?: return null
+                val sdp = text("sdp") ?: return null
+                Command.CallSignal(verb, callId, from = from, sentAt = json.optLong("ts", 0), sdp = sdp)
+            }
+            CallVerb.ANSWER -> Command.CallSignal(verb, callId, sdp = text("sdp") ?: return null)
+            CallVerb.REJECT -> Command.CallSignal(verb, callId, reason = text("reason"))
+            CallVerb.HANGUP -> Command.CallSignal(verb, callId)
+        }
     }
 
     private fun carryOut(command: Command) {
@@ -705,6 +816,8 @@ class StateReporter private constructor(private val context: Context) {
                     Log.w(TAG, "Can't turn the screen off: no device admin")
                 }
             }
+            // Calls come in with nothing on screen, and bring their own
+            is Command.CallSignal -> CallRouter.get(context).onSignal(command)
             // Played whether or not anything is on screen: that is when it's
             // most likely to matter
             is Command.AnnounceAudio -> {
@@ -777,7 +890,10 @@ class StateReporter private constructor(private val context: Context) {
     private fun stateJson(now: Long): JSONObject {
         val slideshow = SlideshowState.shared
         val hold = ScreenControl.hold()
-        val wish = DeviceState.screenWish(hold?.reason, forcedOff, slideshow.nightRuleApplies(context, now))
+        val call = CallRouter.get(context)
+        // A call holds the screen with its window, not a wake lock
+        val holdReason = hold?.reason ?: CallRouter.SCREEN_REASON.takeIf { call.active }
+        val wish = DeviceState.screenWish(holdReason, forcedOff, slideshow.nightRuleApplies(context, now))
         val guess = Occupancy.guess(screenOn, now - screenChangedAt, screensaverAfterMillis())
         val filter = slideshow.currentSettings?.albumFilter
 
@@ -807,6 +923,7 @@ class StateReporter private constructor(private val context: Context) {
             })
             // A Portal without a battery reports one that is absent and empty
             .put("battery", orNull(battery?.takeIf { it.present }?.let { batteryJson(it) }))
+            .put("call", call.stateJson())
             .put("wifi_rssi", orNull(rssi?.toInt()))
             .put("light_lux", orNull(lux?.toInt()))
             .put(
@@ -951,10 +1068,14 @@ class StateReporter private constructor(private val context: Context) {
             .put("host_model", "${Build.MANUFACTURER} ${Build.MODEL}")
             .put("started_at", startedAt)
         if (!online) return payload
+        val calls = CallSettings.load(context).enabled
+        advertisedCalls = calls
         return payload
             .put("started_at_iso", DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochSecond(startedAt)))
             .put("ip", ipAddress() ?: JSONObject.NULL)
             .put("app", "astrodock")
+            // Whether other devices can call this one (see CALLING.md)
+            .put("calls", calls)
     }
 
     // The address of whichever interface is carrying traffic; there's no
@@ -1008,6 +1129,9 @@ class StateReporter private constructor(private val context: Context) {
     companion object {
         private const val TAG = "StateReporter"
         private const val QOS = 0
+        private const val CALL_QOS = 1
+        // A UUID is 36; anything much longer isn't one of ours
+        private const val MAX_CALL_ID = 64
         private const val KEEPALIVE_SECONDS = 30
         private const val CONNECT_TIMEOUT_SECONDS = 10
         // Twice the above, since that only covers opening the socket

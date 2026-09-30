@@ -18,6 +18,12 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // WebRTC is the only native code, and every Portal is arm64 (even the
+        // Android 9 one), so the other three ABIs would only add 30 MB
+        ndk {
+            abiFilters += "arm64-v8a"
+        }
     }
 
     buildFeatures {
@@ -57,6 +63,7 @@ dependencies {
     implementation(libs.paho.mqtt)
     implementation(libs.coil)
     implementation(libs.coil.network.okhttp)
+    implementation(libs.webrtc)
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.junit)

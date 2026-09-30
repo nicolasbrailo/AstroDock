@@ -51,6 +51,14 @@ Usage: tools/push-config.sh [OPTION]...
                            Play the sound files announce_audio sends: true or
                            false (default true)
 
+  Calls between Portals (see CALLING.md):
+
+  --calls-enabled BOOL     Take part in calls: true or false. Also grants the
+                           camera and the microphone, or takes them away again
+  --calls-allowed PREFIXES Who may call, as comma separated topic prefixes,
+                           e.g. 'kitchen-portal,portaloft-portal'. '' for any
+                           device on the broker
+
   --show                   Print the settings on the device and exit
   --reset                  Replace every setting, instead of editing what's there
 EOF
@@ -85,6 +93,8 @@ number() {
 
 show=0
 reset=0
+# The camera and the microphone go with --calls-enabled: empty, true or false
+calls=""
 while [[ $# -gt 0 ]]; do
   # Every option but --show and --reset takes a value, so complain here rather
   # than silently swallowing the next option as one
@@ -109,6 +119,9 @@ while [[ $# -gt 0 ]]; do
     --mqtt-host) set_pref mqtt_host "$2"; shift 2 ;;
     --mqtt-port) number "$2" "$1" 1 65535; set_pref mqtt_port "$2"; shift 2 ;;
     --mqtt-audio-announce) boolean "$2" "$1"; set_pref mqtt_audio_announcements "$2" bool; shift 2 ;;
+    --calls-enabled)
+      boolean "$2" "$1"; set_pref calls_enabled "$2" bool; calls=$2; shift 2 ;;
+    --calls-allowed) set_pref calls_allowed "$2"; shift 2 ;;
     --show) show=1; shift ;;
     --reset) reset=1; shift ;;
     -h | --help) usage; exit 0 ;;
@@ -188,5 +201,16 @@ fi
 # file with the old ones
 adb shell am force-stop "$PKG"
 prefs "$current" | adb shell "run-as $PKG sh -c 'mkdir -p shared_prefs && cat > $PREFS'"
+# Runtime permissions, which adb can grant without the dialog. Revoking them
+# kills the app, which is stopped anyway.
+if [[ -n $calls ]]; then
+  for permission in android.permission.CAMERA android.permission.RECORD_AUDIO; do
+    if [[ $calls == true ]]; then
+      adb shell pm grant "$PKG" "$permission"
+    else
+      adb shell pm revoke "$PKG" "$permission"
+    fi
+  done
+fi
 adb shell am start -n "$PKG/.SlideshowActivity" >/dev/null
 echo "Pushed ${keys[*]} to $(adb shell getprop ro.product.model), app restarted"

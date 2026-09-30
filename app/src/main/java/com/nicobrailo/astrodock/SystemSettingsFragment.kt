@@ -17,6 +17,7 @@ import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import com.nicobrailo.astrodock.call.CallSettings
 
 // What the app needs from the system. At the top, a list of what is missing
 // and what doesn't work without it, with a pointer to tools/setup-device.sh,
@@ -53,6 +54,11 @@ class SystemSettingsFragment : Fragment() {
     // these have to be started for a result, not just started. The result
     // itself is ignored: onResume() re-reads the real state.
     private val systemDialog = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+
+    // The runtime permissions a call needs, which are asked for in a dialog
+    // of their own rather than a settings screen
+    private val permissionDialog =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { refresh() }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, state: Bundle?): View {
         val view = inflater.inflate(R.layout.fragment_system_settings, container, false)
@@ -94,6 +100,7 @@ class SystemSettingsFragment : Fragment() {
         val screensavers = AndroidSettings.Secure
             .getString(context.contentResolver, "screensaver_components")
         val contrastOn = TextContrast.isEnabled(context)
+        val canCall = CallSettings.canCapture(context)
         // Its device admin and notification access screens can't grant
         // anything (see the class comment)
         val isPortal = Build.MANUFACTURER.equals("Facebook", ignoreCase = true)
@@ -185,6 +192,19 @@ class SystemSettingsFragment : Fragment() {
                     Uri.parse("package:${context.packageName}")
                 ),
                 missing = getString(R.string.system_install_missing),
+            ),
+            // Only a device that takes part in calls needs it, so it's only
+            // missing while calls are on
+            Item(
+                title = getString(R.string.system_call_title),
+                description = getString(R.string.system_call_description),
+                buttonText = getString(R.string.system_call_button),
+                done = canCall,
+                intent = null,
+                action = if (canCall) null else {
+                    { permissionDialog.launch(CallSettings.PERMISSIONS) }
+                },
+                missing = if (CallSettings.load(context).enabled) getString(R.string.system_call_missing) else null,
             ),
             // Only adb can grant this one, so there's nothing to tap: the
             // command is in the description, and tools/setup-device.sh runs it

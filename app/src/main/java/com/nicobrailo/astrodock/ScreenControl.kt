@@ -41,11 +41,22 @@ object ScreenControl {
     // own window stops working the moment that window is hidden, but a wake
     // lock doesn't. Always released again by the caller; the timeout is only a
     // backstop for a caller that dies first.
+    //
+    // `wakeUp` also switches the screen on if it is off, and ends a
+    // screensaver that is running, ours or the Portal's: an incoming call
+    // needs both, since an activity started under a screensaver stays hidden
+    // behind it.
     @Suppress("DEPRECATION") // No replacement that works while another app is in front
-    fun keepScreenOn(context: Context, reason: String, timeoutMillis: Long): PowerManager.WakeLock? {
+    fun keepScreenOn(
+        context: Context,
+        reason: String,
+        timeoutMillis: Long,
+        wakeUp: Boolean = false,
+    ): PowerManager.WakeLock? {
         val power = context.getSystemService(PowerManager::class.java) ?: return null
+        val flags = PowerManager.SCREEN_BRIGHT_WAKE_LOCK or (if (wakeUp) PowerManager.ACQUIRE_CAUSES_WAKEUP else 0)
         return try {
-            power.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "astrodock:$reason").apply {
+            power.newWakeLock(flags, "astrodock:$reason").apply {
                 setReferenceCounted(false)
                 acquire(timeoutMillis)
                 Log.i(TAG, "Keeping the screen on: $reason")

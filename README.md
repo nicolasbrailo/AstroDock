@@ -11,6 +11,7 @@ A lightweight home screen and screensaver for the Facebook Portal Go.
 * **Smart Power**: Scheduled sleep/wake cycles and automated screen management.
 * **Media Controls**: "Now Playing" overlay for controlling background music and video apps.
 * **MQTT Remote**: Publishes device state (occupancy, current photo) and accepts remote commands (navigation, power, text and audio announcements).
+* **Calls between Portals**: Video calls from one Portal to another over the same MQTT broker, answered automatically. Off by default; see [CALLING.md](CALLING.md).
 
 ## Installing
 
@@ -84,6 +85,7 @@ state and a button that opens the system dialog for it:
 | Media controls | Notification access, for the "now playing" panel. |
 | Home button over other apps | Draws a home button over apps that hide the Portal's own, like WhatsApp. |
 | Install unknown apps | Lets the Apps tab install and update apps, including AstroDock itself. |
+| Camera and microphone | Only for calls between Portals, turned on in the **MQTT** tab. |
 
 None of these need adb, and the slideshow runs without any of them: each one
 only adds what its row describes. The list ends with the screen-off delay,

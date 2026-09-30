@@ -39,6 +39,20 @@
     <!-- Needed from Android 14 for the "specialUse" service below -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
+    <!-- Calls between Portals (call/CallActivity.kt). The camera and the
+         microphone are only granted on a device that takes part in calls
+         (System tab, or tools/push-config.sh). MODIFY_AUDIO_SETTINGS puts the
+         audio in call mode for the length of a call. WebRTC watches the
+         network, and without ACCESS_NETWORK_STATE its native code aborts the
+         process as the call starts. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+
     <!-- Lets AppListActivity see the apps it can launch (Android 11+ hides
          other packages otherwise) -->
     <queries>
@@ -157,6 +171,23 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- A call, in a process of its own: Android takes the default home
+             app away from one whose process crashes, and WebRTC is a lot of
+             native code. A task of its own too, so it doesn't bring the app
+             list back with it. -->
+        <activity
+            android:name=".call.CallActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:process=":call"
+            android:taskAffinity="${applicationId}.call"
+            android:theme="@style/Theme.AstroDock.Fullscreen" />
+
+        <!-- The main process's end of a call, which CallActivity binds to -->
+        <service
+            android:name=".call.CallSignalService"
+            android:exported="false" />
 
         <activity
             android:name=".SettingsActivity"

@@ -29,6 +29,16 @@ class CommandsTest {
     }
 
     @Test
+    fun recognisesTheCallMessages() {
+        assertEquals(CommandKind.CALL_OFFER, Commands.kind("${prefix}cmd/call/offer", prefix))
+        assertEquals(CommandKind.CALL_ANSWER, Commands.kind("${prefix}cmd/call/answer", prefix))
+        assertEquals(CommandKind.CALL_REJECT, Commands.kind("${prefix}cmd/call/reject", prefix))
+        assertEquals(CommandKind.CALL_HANGUP, Commands.kind("${prefix}cmd/call/hangup", prefix))
+        // Another device's call messages aren't ours to act on
+        assertNull(Commands.kind("kitchen/cmd/call/offer", prefix))
+    }
+
+    @Test
     fun ignoresTheRest() {
         // The homeboard's own renderer commands
         assertNull(Commands.kind("${prefix}cmd/ambience/set_svg_overlay", prefix))
