@@ -148,6 +148,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- Goes back to the home screen after an update, which otherwise
+             can leave the Portal's own one in front (UpdateReceiver) -->
+        <receiver
+            android:name=".UpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <activity
             android:name=".SettingsActivity"
             android:exported="false"

@@ -354,6 +354,15 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   It is a secure setting, so it needs the adb grant for
   `WRITE_SECURE_SETTINGS` and does nothing without it, which is why the System
   tab shows the two next to each other. It is the only thing that grant is for.
+- `UpdateReceiver.kt`: puts things back after the app is updated
+  (`MY_PACKAGE_REPLACED`), since an update from the Apps tab has no adb to
+  run `tools/setup-device.sh` with. It presses Home, if AstroDock is still the
+  default home app, which needs the "display over other apps" grant to start
+  an activity from the background; and if the system put the Portal's
+  screensaver back, it restores ours, but only if ours was the screensaver
+  when a slideshow last appeared (`noteScreensaver`, called from
+  `SlideshowController.start()`), so a screensaver chosen on purpose stays.
+  See the platform note on installing over the running app.
 - `ScreenAdminReceiver.kt` + `res/xml/device_admin.xml`: device admin with the
   force-lock policy only, so the app can turn the screen off. On the Portal the
   System tab's button doesn't work (see the platform notes), so
@@ -786,7 +795,22 @@ the server and sampling settings reset the slideshow.
 - **Installing over a running screensaver loses the screensaver setting.**
   `adb install -r` kills the dream, and the system then puts
   `screensaver_components` back to the Portal's `HomeDreamService`. Measured
-  2026-09-25. Run `tools/setup-device.sh` again after such an install.
+  2026-09-25. Run `tools/setup-device.sh` again after such an install
+  (`UpdateReceiver` also undoes it).
+- **Installing over the running home screen can leave the Portal's launcher
+  in front, or lose the default home app.** The install kills the app, the
+  system restarts the home activity at once, finds the package still frozen
+  ("Package ... is currently frozen!") and falls back to the Portal's
+  `HomeActivity`. That starts our screensaver and stops it again about every
+  1.3s (`PlatformDreamManager` start/stopDreaming), so the screen flips
+  between the two until Home is pressed. Measured 2026-09-30 with
+  `adb install -r`, once with the home screen in front and once with the
+  screensaver running. In another run with the home screen in front, the
+  failed restart counted as a crash, and HOME then resolved to the chooser:
+  only the user (or `set-home-activity`) can fix that. With another app in
+  front, as the system installer is during an update from the Apps tab, none
+  of it happens. `UpdateReceiver` presses Home afterwards, which fixes the
+  first two cases but not a lost default.
 - Declaring HOME means that, until the user picks a default home app, pressing
   Home shows a chooser between astrodock and the Portal launcher.
 - **A home app that crashes loses the default.** Android clears the preferred

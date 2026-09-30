@@ -224,6 +224,9 @@ class SlideshowController(
             reporter.setError(ERROR_IMMICH, null)
         }
 
+        // For the next update, which may put the Portal's screensaver back
+        UpdateReceiver.noteScreensaver(context)
+
         // Before anything is reported, so a screen the Portal wakes at night
         // is reported as the dark screen it is, without a moment of "active"
         startNightWatch()
