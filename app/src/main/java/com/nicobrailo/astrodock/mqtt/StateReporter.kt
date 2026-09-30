@@ -57,7 +57,7 @@ import java.util.concurrent.atomic.AtomicLong
 // Publishes what this device is doing to an MQTT broker, following the
 // homeboard bridge's topics (see its README):
 //
-//   <prefix>state/bridge            online/offline record, offline also as the
+//   <prefix>availability            online/offline record, offline also as the
 //                                   last will, so a crash still says so
 //   <prefix>state                   everything else about the device, as one
 //                                   record (see stateJson)
@@ -75,7 +75,7 @@ import java.util.concurrent.atomic.AtomicLong
 // Differences from the spec, all because this is a Portal and not the
 // homeboard: there is no `distance_cm` (no mmWave sensor, and occupancy is a
 // guess from the screen — see Occupancy), and the render config fields of
-// state/bridge are left out because nothing here has them.
+// availability are left out because nothing here has them.
 //
 // One instance per process. Its methods are safe to call from the main thread:
 // the work happens on its own scope.
@@ -328,7 +328,7 @@ class StateReporter private constructor(private val context: Context) {
 
     // Two devices under one prefix overwrite each other's retained records and
     // both carry out every command, so before publishing anything we read the
-    // retained state/bridge record: one with another machine_id means another
+    // retained availability record: one with another machine_id means another
     // device has this prefix, and we stay off the broker and say so. An empty
     // or missing record is free, which is also how to hand a prefix over.
     //
@@ -347,7 +347,7 @@ class StateReporter private constructor(private val context: Context) {
     // when the broker can't be reached, which it reports the same way
     // connect() would.
     private fun checkPrefix(settings: MqttSettings): Set<String>? {
-        val topic = settings.topicPrefix + "state/bridge"
+        val topic = settings.topicPrefix + RetainedTopics.AVAILABILITY
         val probe = try {
             MqttClient("tcp://${settings.host}:${settings.port}", "${settings.clientId}-check", MemoryPersistence())
         } catch (e: MqttException) {
@@ -418,11 +418,11 @@ class StateReporter private constructor(private val context: Context) {
     // What this device left under the prefix it used before being renamed,
     // to be cleared with the rest. Nothing if someone else has that prefix
     // now: what is there is theirs. The old connection was closed cleanly, so
-    // the broker didn't publish its last will, and its state/bridge still says
+    // the broker didn't publish its last will, and its availability still says
     // online until this clears it.
     private fun leftUnder(probe: MqttClient, oldPrefix: String, newPrefix: String): Set<String> {
         val retained = retainedUnder(probe, oldPrefix)
-        val owner = otherOwner(retained[oldPrefix + "state/bridge"])
+        val owner = otherOwner(retained[oldPrefix + RetainedTopics.AVAILABILITY])
         if (owner != null) {
             Log.i(TAG, "$oldPrefix belongs to $owner now, leaving it alone")
             return emptySet()
@@ -430,7 +430,7 @@ class StateReporter private constructor(private val context: Context) {
         return RetainedTopics.toClear(retained.keys, oldPrefix, skipPrefix = newPrefix)
     }
 
-    // Who a retained state/bridge record says it belongs to, as its hostname
+    // Who a retained availability record says it belongs to, as its hostname
     // or machine id, or null if it is ours or nobody's. A record that doesn't
     // say whose it is still means some device publishes there.
     private fun otherOwner(record: ByteArray?): String? {
@@ -454,8 +454,8 @@ class StateReporter private constructor(private val context: Context) {
             isAutomaticReconnect = true
             // Latched at connect time: the broker publishes this if we vanish
             setWill(
-                settings.topicPrefix + "state/bridge",
-                bridgePayload(online = false).toString().toByteArray(),
+                settings.topicPrefix + RetainedTopics.AVAILABILITY,
+                availabilityPayload(online = false).toString().toByteArray(),
                 QOS,
                 true,
             )
@@ -737,7 +737,7 @@ class StateReporter private constructor(private val context: Context) {
 
     // Everything a late subscriber should see, published on every connect
     private fun publishEverything() {
-        publish("state/bridge", bridgePayload(online = true))
+        publish(RetainedTopics.AVAILABILITY, availabilityPayload(online = true))
         displayedPhoto?.let { publish("state/displayed_photo", it) }
         mainThread.post { publishState(force = true) }
     }
@@ -941,7 +941,7 @@ class StateReporter private constructor(private val context: Context) {
         }
     }
 
-    private fun bridgePayload(online: Boolean): JSONObject {
+    private fun availabilityPayload(online: Boolean): JSONObject {
         // The offline payload carries only what can't go stale: no IP (DHCP
         // drifts) and nothing derived, as in the spec
         val payload = JSONObject()

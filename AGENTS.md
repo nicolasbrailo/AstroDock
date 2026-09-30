@@ -195,8 +195,10 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
 - `mqtt/StateReporter.kt`, `mqtt/MqttSettings.kt`, `mqtt/Occupancy.kt`, `mqtt/DeviceState.kt` +
   `MqttSettingsFragment.kt`, `res/xml/mqtt_preferences.xml`: publishes what the
   device is doing to an MQTT broker, on the topics of the homeboard bridge
-  (`~/src/homeboard/dbus-mqtt-bridge/README.md`): `state/bridge` (online record,
-  with the offline one preset as the last will, so a crash still reports),
+  (`~/src/homeboard/dbus-mqtt-bridge/README.md`): `availability` (online record,
+  with the offline one preset as the last will, so a crash still reports; it
+  was `state/bridge` until 2026-09-30, and zmw_homeboard only reads the new
+  name, `+/availability`),
   `state/displayed_photo`, and `state`, which is ours rather than the spec's
   and replaces its `state/occupancy` and `state/slideshow_active` (the
   homeboard is to follow). All retained, QoS 0. It also subscribes to `<prefix>cmd/#` and carries out the
@@ -303,27 +305,28 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   `MqttSettings.systemName` reads the Bluetooth name (`BluetoothAdapter`, then
   the setting) and only falls back to `device_name`. Each device needs its own
   prefix, or they overwrite each other's retained topics, so before connecting
-  (`checkPrefix`) the reporter reads the retained `state/bridge`, on a
+  (`checkPrefix`) the reporter reads the retained `availability`, on a
   connection of its own with no last will, and if it holds another
   `machine_id` it stays off the broker and shows why in the alert corner. It
   doesn't try those settings again until they change or the app restarts.
   That check subscribes to `<prefix>#`, so it also sees everything else
   retained there, and once the prefix is ours, the first connect clears what
   we don't publish by publishing an empty retained message to each: MQTT
-  can't delete by wildcard. Only `state`, `state/...` and `cmd/...` are
-  cleared (`RetainedTopics`, unit tested), because a prefix like `home/` also
+  can't delete by wildcard. Only `state`, `availability`, `state/...` and
+  `cmd/...` are cleared (`RetainedTopics`, unit tested; that is what removes
+  an older version's `state/bridge`), because a prefix like `home/` also
   matches another device under `home/kitchen/`; the three topics we publish
   are left to be replaced. It stops listening 300ms after the last retained
   message, or after 2s if there are none. A rename clears the old prefix
   too: every connect stores the broker and prefix it published under
   (`MqttSettings.notePublished`), and a check that finds a different prefix
   stored for the same broker also reads the old one and clears our topics
-  there, unless its `state/bridge` now belongs to another device. That
+  there, unless its `availability` now belongs to another device. That
   matters because the old connection closes cleanly, so its last will never
-  fires and the old `state/bridge` would say online for ever. A prefix on
+  fires and the old `availability` would say online for ever. A prefix on
   another broker is left alone. Measured 2026-09-29: portaloft to
   portaloft-test and back, each leaving the old prefix empty. An
-  empty record is free: `mosquitto_pub -r -n -t <prefix>state/bridge` hands a
+  empty record is free: `mosquitto_pub -r -n -t <prefix>availability` hands a
   prefix over. `machine_id` is `ANDROID_ID` (a generated UUID only without
   one), because it has to survive a reinstall: a device with a new id would
   find its own old record and refuse its own name. When testing it, stop the
