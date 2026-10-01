@@ -192,7 +192,7 @@
     <string name="call_ended">Call ended</string>
     <string name="call_disconnected">Call disconnected</string>
     <string name="call_hung_up">%1$s hung up</string>
-    <string name="call_no_connection">Couldn\'t connect to %1$s</string>
+    <string name="call_no_connection">Can\'t reach %1$s over the network</string>
     <string name="call_no_answer">%1$s didn\'t answer</string>
     <string name="call_unreachable">Can\'t reach the MQTT broker</string>
     <string name="call_no_permission">Calls need the camera and the microphone (System tab)</string>

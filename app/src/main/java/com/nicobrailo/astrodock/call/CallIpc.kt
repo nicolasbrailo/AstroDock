@@ -13,7 +13,9 @@ object CallIpc {
     const val MSG_LOCAL_SDP = 2
     // Media is flowing
     const val MSG_CONNECTED = 3
-    // The call is over on this side (hung up, or the connection failed)
+    // The call is over on this side (hung up, or the connection failed).
+    // KEY_END_REASON is END_NO_CONNECTION if the media never got through,
+    // so the other side can say so rather than that we hung up.
     const val MSG_ENDED = 4
 
     // Service to activity
@@ -32,7 +34,9 @@ object CallIpc {
     const val END_HANGUP = "hangup"
     // We called, and the other side never answered
     const val END_NO_ANSWER = "no_answer"
-    // Both sides agreed to the call, but the media never got through
+    // Both sides agreed to the call, but the media never got through: the
+    // devices can't reach each other on the network. Also sent to the other
+    // device as a hangup's reason.
     const val END_NO_CONNECTION = "no_connection"
     const val END_UNREACHABLE = "unreachable"
     // The main process doesn't know this call (it ended before the activity

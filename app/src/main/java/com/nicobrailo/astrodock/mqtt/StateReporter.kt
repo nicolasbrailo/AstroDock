@@ -793,7 +793,7 @@ class StateReporter private constructor(private val context: Context) {
             }
             CallVerb.ANSWER -> Command.CallSignal(verb, callId, sdp = text("sdp") ?: return null)
             CallVerb.REJECT -> Command.CallSignal(verb, callId, reason = text("reason"))
-            CallVerb.HANGUP -> Command.CallSignal(verb, callId)
+            CallVerb.HANGUP -> Command.CallSignal(verb, callId, reason = text("reason"))
         }
     }
 

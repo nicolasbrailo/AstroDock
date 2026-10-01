@@ -34,7 +34,7 @@ sealed interface Command {
     // A message from another device about a call. Every one has the call's
     // id; an offer also has who is calling (`from`, their prefix), when
     // (`sentAt`, seconds) and `sdp`, an answer has `sdp`, and a rejection
-    // `reason`.
+    // `reason`, as may a hangup.
     data class CallSignal(
         val verb: CallVerb,
         val callId: String,

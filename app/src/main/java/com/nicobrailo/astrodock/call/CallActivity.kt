@@ -106,7 +106,8 @@ class CallActivity : AppCompatActivity() {
 
         override fun onFailed(why: String) {
             Log.w(TAG, "Call failed: $why")
-            tell(CallIpc.MSG_ENDED)
+            if (everConnected) tell(CallIpc.MSG_ENDED)
+            else tell(CallIpc.MSG_ENDED, CallIpc.KEY_END_REASON, CallIpc.END_NO_CONNECTION)
             endWith(
                 if (everConnected) getString(R.string.call_disconnected)
                 else getString(R.string.call_no_connection, peerName)

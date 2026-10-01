@@ -117,8 +117,9 @@ class CallRouter private constructor(private val context: Context) {
             }
             CallVerb.HANGUP -> {
                 val current = matching(signal) ?: return
-                Log.i(TAG, "${current.peer} hung up")
-                end(CallIpc.END_HANGUP, notifyPeer = false)
+                Log.i(TAG, "${current.peer} hung up: ${signal.reason}")
+                val reason = if (signal.reason == CallIpc.END_NO_CONNECTION) CallIpc.END_NO_CONNECTION else CallIpc.END_HANGUP
+                end(reason, notifyPeer = false)
             }
         }
     }
@@ -215,11 +216,12 @@ class CallRouter private constructor(private val context: Context) {
         reporter.refresh()
     }
 
-    // The activity hung up, or its connection failed
-    fun onEnded(callId: String) {
+    // The activity hung up, or its connection failed (`reason`
+    // END_NO_CONNECTION if it never connected)
+    fun onEnded(callId: String, reason: String?) {
         if (call?.id != callId) return
         session = null
-        end(CallIpc.END_HANGUP, notifyPeer = true)
+        end(if (reason == CallIpc.END_NO_CONNECTION) reason else CallIpc.END_HANGUP, notifyPeer = true)
     }
 
     // The :call process died, so nothing will hang up for it
@@ -236,7 +238,14 @@ class CallRouter private constructor(private val context: Context) {
         main.removeCallbacks(giveUp)
         main.removeCallbacks(rewake)
         releaseWakeLock()
-        if (notifyPeer) reporter.sendCall(current.peer, CallVerb.HANGUP, JSONObject().put("call_id", current.id))
+        if (notifyPeer) {
+            // A call that never connected failed on both sides, but WebRTC
+            // gives up on each at its own time, and whichever side goes first
+            // would otherwise look to the other like it hung up
+            val hangup = JSONObject().put("call_id", current.id)
+            if (reason == CallIpc.END_NO_CONNECTION) hangup.put("reason", reason)
+            reporter.sendCall(current.peer, CallVerb.HANGUP, hangup)
+        }
         send(CallIpc.MSG_END, CallIpc.KEY_END_REASON, reason)
         session = null
         reporter.refresh()

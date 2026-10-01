@@ -23,7 +23,7 @@ under the same `cmd/` convention as the other commands:
 | `cmd/call/offer` | caller | `{"call_id":"<uuid>","from":"<caller prefix>","ts":<epoch s>,"sdp":"v=0..."}` |
 | `cmd/call/answer` | callee | `{"call_id":"<uuid>","sdp":"v=0..."}` |
 | `cmd/call/reject` | callee | `{"call_id":"<uuid>","reason":"disabled"\|"not_allowed"\|"unavailable"\|"night"\|"busy"}` |
-| `cmd/call/hangup` | either | `{"call_id":"<uuid>"}` |
+| `cmd/call/hangup` | either | `{"call_id":"<uuid>"}`, plus `"reason":"no_connection"` if the media never got through |
 
 - There is no `ring`: the callee answers by itself, so the offer is the ring.
 - `from` is where replies go, so the callee needs no directory to answer. It
@@ -185,12 +185,19 @@ nobody can see that it is. Not at once, because of the screensaver above.
 - **No connection within 30s** of the call starting, on either side: the
   call is given up on and the other side is sent a `hangup`. The caller shows
   "didn't answer" if no answer came, which covers a callee that is offline or
-  whose `:call` crashed while starting, and "Couldn't connect" if one did but
-  the media never got through, which is a network problem.
+  whose `:call` crashed while starting, and "Can't reach portaloft over the
+  network" if one did but the media never got through: the two devices
+  can't reach each other (Wi-Fi client isolation, say, or two mesh nodes
+  that don't pass traffic between their clients), which `ping` between them
+  confirms. The `hangup` then says `"reason":"no_connection"`.
 - **A connection that drops** and stays `DISCONNECTED` for 5s, or goes
   `FAILED`, ends the call, since a device that vanishes sends no `hangup`.
   WebRTC takes about 7s to notice, so that is about 12s after the other side
-  went.
+  went. One that never connected goes `FAILED` after about 15s of checks
+  that get no reply, on one side before the other, and that side's `hangup`
+  says `"reason":"no_connection"`, so the other one shows the same failure
+  rather than "hung up". Measured 2026-10-01 between two devices that
+  couldn't ping each other.
 
 ### On screen
 
@@ -199,7 +206,7 @@ The call screen says what is going on at the top: "Ringing portaloft…"
 (answered), "Call connected" for 3s and then just the other device's name,
 and "Connection lost, reconnecting…" while the connection is down. At the
 end, for 2.5s before it closes, it says why: "portaloft hung up", "Call
-disconnected", "portaloft didn't answer", "Couldn't connect to portaloft", or
+disconnected", "portaloft didn't answer", "Can't reach portaloft over the network", or
 the reason a call was refused ("It's night time at portaloft"). Hanging up
 yourself closes it at once. A called device beeps as the call comes in.
 
