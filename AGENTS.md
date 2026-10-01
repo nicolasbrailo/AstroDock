@@ -379,8 +379,9 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   cost AstroDock the home screen (measured: it doesn't). `CallRouter` (main
   process) takes or refuses an offer (`Calls.refusal`: off, not on the allow
   list, no camera or microphone, night, busy), wakes the device, and starts
-  `CallActivity` (`:call`), which does the media (`CallMedia`) and nothing
-  else: everything it sends goes through `CallSignalService` (main process,
+  `CallActivity` (`:call`), which rings an incoming call for 3s with a
+  countdown (the hang up button declines it then, a `reject` with
+  `declined`), and then does the media (`CallMedia`) and nothing else: everything it sends goes through `CallSignalService` (main process,
   a bound service with a Messenger, see `CallIpc`), since the main process
   holds the only MQTT connection. **Nothing in `:call` may touch
   `StateReporter` or `SlideshowState`**: they'd be second copies, and a second
@@ -660,8 +661,8 @@ hours are greyed out and the reason is shown in red; this is checked every
 time the tab is resumed, so granting it enables them. The red doesn't show on
 a Portal set up by `tools/setup-device.sh`, whose high contrast text draws
 every string black or white. The MQTT tab's "Calls" section: whether this
-device takes part in calls (default off; it then answers every call by
-itself), and who can call it, as comma separated topic prefixes (empty means
+device takes part in calls (default off; it then rings for 3s, when the
+call can be declined, and answers by itself), and who can call it, as comma separated topic prefixes (empty means
 any device on the broker, so the broker's own access control is what really
 decides). Calls are refused while the night rule applies.
 

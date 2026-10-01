@@ -1,8 +1,9 @@
 # Calling between Portals
 
 Any Portal running AstroDock can video call any other one on the same MQTT
-broker. The callee answers by itself, whatever it was doing (slideshow,
-screensaver, another app, screen off), except at night, when it refuses.
+broker. The callee rings for 3 seconds, which is the chance to decline, and
+then answers by itself, whatever it was doing (slideshow, screensaver,
+another app, screen off), except at night, when it refuses.
 Calls are set up over MQTT and the media goes directly between the two
 devices with WebRTC. The code is in `app/src/main/java/.../call/`.
 
@@ -22,10 +23,12 @@ under the same `cmd/` convention as the other commands:
 |---|---|---|
 | `cmd/call/offer` | caller | `{"call_id":"<uuid>","from":"<caller prefix>","ts":<epoch s>,"sdp":"v=0..."}` |
 | `cmd/call/answer` | callee | `{"call_id":"<uuid>","sdp":"v=0..."}` |
-| `cmd/call/reject` | callee | `{"call_id":"<uuid>","reason":"disabled"\|"not_allowed"\|"unavailable"\|"night"\|"busy"}` |
+| `cmd/call/reject` | callee | `{"call_id":"<uuid>","reason":"disabled"\|"not_allowed"\|"unavailable"\|"night"\|"busy"\|"declined"}` |
 | `cmd/call/hangup` | either | `{"call_id":"<uuid>"}`, plus `"reason":"no_connection"` if the media never got through |
 
-- There is no `ring`: the callee answers by itself, so the offer is the ring.
+- There is no `ring`: the offer is the ring. The callee rings for 3s on its
+  own and then answers, or sends `reject` with `declined` if someone turned
+  the call down meanwhile. The caller's 30s timeout covers the wait.
 - `from` is where replies go, so the callee needs no directory to answer. It
   must be a prefix that can be published to (no `+` or `#`).
 - `call_id` is on every message, and one that doesn't match the current call
@@ -55,6 +58,9 @@ The callee replies `reject` without starting anything when, in this order
 
 Two devices calling each other at once are each busy, so each rejects the
 other.
+
+An offer that passes all of these can still be turned down by hand while it
+rings (`declined`, see "On screen").
 
 ### Who can be called
 
@@ -208,11 +214,18 @@ and "Connection lost, reconnecting…" while the connection is down. At the
 end, for 2.5s before it closes, it says why: "portaloft hung up", "Call
 disconnected", "portaloft didn't answer", "Can't reach portaloft over the network", or
 the reason a call was refused ("It's night time at portaloft"). Hanging up
-yourself closes it at once. A called device beeps as the call comes in.
+yourself closes it at once.
+
+A called device rings first: for 3s it says "Incoming call from portaloft,
+will connect in 3 seconds", counting down, and beeps once a second, with the
+camera and microphone still off. The hang up button declines the call then,
+which sends `reject` with `declined` (the caller shows "portaloft declined
+the call"). When the countdown ends it answers, and only then starts the
+media.
 
 ## Security
 
-Answering by itself makes every Portal with calls on a camera and microphone
+Answering by itself, 3s after it starts ringing, makes every Portal with calls on a camera and microphone
 that anyone who can publish to the broker can turn on. The app only checks
 the allow list, and `from` is just a field in the payload, so it can't tell
 who really sent an offer. **Restrict who can publish to `+/cmd/call/#` on the

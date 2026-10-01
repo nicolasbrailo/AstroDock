@@ -27,7 +27,9 @@ enum class RejectReason(val wire: String) {
     // The callee's night rule applies
     NIGHT("night"),
     // The callee is in another call
-    BUSY("busy");
+    BUSY("busy"),
+    // Someone at the callee turned the call down while it rang
+    DECLINED("declined");
 
     companion object {
         fun ofWire(wire: String): RejectReason? = entries.firstOrNull { it.wire == wire }
@@ -38,7 +40,7 @@ enum class RejectReason(val wire: String) {
 enum class CallPhase(val wire: String) {
     // We called and are waiting for the other side's media
     OUTGOING("outgoing"),
-    // We were called and are setting up our side
+    // We were called, and are ringing or setting up our side
     INCOMING("incoming"),
     // Media is flowing
     IN_CALL("in_call"),

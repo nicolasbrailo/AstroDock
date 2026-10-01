@@ -173,7 +173,7 @@
 
     <string name="mqtt_category_calls">Calls</string>
     <string name="calls_enabled">Take part in calls</string>
-    <string name="calls_enabled_summary">Other Portals with this on can call this one, and it answers by itself, showing its camera and playing its microphone. Needs the camera and microphone from the System tab. Calls are refused while the night rule applies.</string>
+    <string name="calls_enabled_summary">Other Portals with this on can call this one, and it answers by itself after ringing for 3 seconds, showing its camera and playing its microphone. Needs the camera and microphone from the System tab. Calls are refused while the night rule applies.</string>
     <string name="calls_allowed">Who can call</string>
     <string name="calls_allowed_hint">Topic prefixes of the devices that may call this one, comma separated, e.g. kitchen-portal, portaloft-portal. Empty means any device on the broker, so restrict who can publish to the broker too.</string>
     <string name="calls_allowed_anyone">Any device on the broker</string>
@@ -188,6 +188,11 @@
     <string name="call_connected">Call connected</string>
     <string name="call_reconnecting">Connection lost, reconnecting…</string>
     <string name="call_incoming">Call from %1$s</string>
+    <plurals name="call_incoming_countdown">
+        <item quantity="one">Incoming call from %1$s, will connect in %2$d second</item>
+        <item quantity="other">Incoming call from %1$s, will connect in %2$d seconds</item>
+    </plurals>
+    <string name="call_decline">Decline</string>
     <string name="call_hang_up">Hang up</string>
     <string name="call_ended">Call ended</string>
     <string name="call_disconnected">Call disconnected</string>
@@ -201,6 +206,7 @@
     <string name="call_rejected_unavailable">%1$s can\'t use its camera or microphone</string>
     <string name="call_rejected_night">It\'s night time at %1$s</string>
     <string name="call_rejected_busy">%1$s is in another call</string>
+    <string name="call_rejected_declined">%1$s declined the call</string>
 
     <string name="system_call_title">Camera and microphone</string>
     <string name="system_call_description">For calls between Portals (MQTT tab). Only needed on a device that takes part in calls.</string>

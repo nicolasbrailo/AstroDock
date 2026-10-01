@@ -217,10 +217,19 @@ class CallRouter private constructor(private val context: Context) {
     }
 
     // The activity hung up, or its connection failed (`reason`
-    // END_NO_CONNECTION if it never connected)
+    // END_NO_CONNECTION if it never connected), or it was declined while it
+    // rang (`reason` DECLINED's wire name)
     fun onEnded(callId: String, reason: String?) {
-        if (call?.id != callId) return
+        val current = call?.takeIf { it.id == callId } ?: return
         session = null
+        // Nothing was answered yet, so to the caller it is a refusal like any
+        // other, and it can say who turned it down
+        if (reason == RejectReason.DECLINED.wire && !current.outgoing && current.phase == CallPhase.INCOMING) {
+            Log.i(TAG, "Declined the call from ${current.peer}")
+            reporter.sendCall(current.peer, CallVerb.REJECT, JSONObject().put("call_id", current.id).put("reason", reason))
+            end(reason, notifyPeer = false)
+            return
+        }
         end(if (reason == CallIpc.END_NO_CONNECTION) reason else CallIpc.END_HANGUP, notifyPeer = true)
     }
 

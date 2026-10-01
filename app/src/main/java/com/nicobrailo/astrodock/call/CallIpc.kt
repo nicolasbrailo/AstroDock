@@ -15,7 +15,8 @@ object CallIpc {
     const val MSG_CONNECTED = 3
     // The call is over on this side (hung up, or the connection failed).
     // KEY_END_REASON is END_NO_CONNECTION if the media never got through,
-    // so the other side can say so rather than that we hung up.
+    // so the other side can say so rather than that we hung up, or
+    // RejectReason.DECLINED's wire name if it was turned down while it rang.
     const val MSG_ENDED = 4
 
     // Service to activity

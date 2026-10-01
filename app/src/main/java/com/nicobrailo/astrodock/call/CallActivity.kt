@@ -33,6 +33,10 @@ import org.webrtc.SurfaceViewRenderer
 // would be second copies, and a second StateReporter would be a second MQTT
 // client with our client id.
 //
+// An incoming call rings for a few seconds first, saying who is calling and
+// counting down, and the hang up button declines it until then. After that it
+// connects by itself.
+//
 // A call only lasts while this is in front. Leaving it, by Home or by the
 // screen being switched off, hangs up, so the camera is never on with nobody
 // able to see that it is. Not at once, though: an incoming call on a screen
@@ -56,6 +60,29 @@ class CallActivity : AppCompatActivity() {
     // Media has flowed at least once, which makes losing it a disconnection
     // rather than a call that never got going
     private var everConnected = false
+    // An incoming call is ringing: the camera and microphone aren't on yet, and
+    // the button declines it
+    private var ringing = false
+    // Seconds of ringing left
+    private var ringLeft = 0
+    private var ringTone: ToneGenerator? = null
+    // The caller's offer, for an incoming call
+    private var offer: String? = null
+
+    // Once a second while ringing: the countdown and a ring, and when it's
+    // over, the call
+    private val ring = object : Runnable {
+        override fun run() {
+            if (ringLeft == 0) {
+                answer()
+                return
+            }
+            status.text = resources.getQuantityString(R.plurals.call_incoming_countdown, ringLeft, peerName, ringLeft)
+            ringTone?.startTone(ToneGenerator.TONE_PROP_BEEP2, TONE_MILLIS)
+            ringLeft--
+            main.postDelayed(this, RING_STEP_MILLIS)
+        }
+    }
 
     // "Call connected" stays up for a moment, and then the status is just
     // who the call is with
@@ -133,11 +160,11 @@ class CallActivity : AppCompatActivity() {
             return
         }
         peerName = intent.getStringExtra(EXTRA_PEER_NAME).orEmpty()
-        val offer = intent.getStringExtra(EXTRA_OFFER)
+        offer = intent.getStringExtra(EXTRA_OFFER)
         status = findViewById(R.id.call_status)
         status.text = getString(if (offer == null) R.string.call_ringing else R.string.call_incoming, peerName)
         hangUpButton = findViewById(R.id.call_hang_up)
-        hangUpButton.setOnClickListener { hangUp() }
+        hangUpButton.setOnClickListener { if (ringing) decline() else hangUp() }
 
         bound = bindService(Intent(this, CallSignalService::class.java), connection, BIND_AUTO_CREATE)
 
@@ -146,11 +173,52 @@ class CallActivity : AppCompatActivity() {
             endWith(getString(R.string.call_no_permission))
             return
         }
-        // The camera and the microphone are about to go on without anyone here
-        // having asked for it, so it shouldn't happen silently
-        if (offer != null) beep()
+        if (offer == null) startMedia() else startRinging()
+    }
+
+    private fun startMedia() {
         media = CallMedia(this, findViewById(R.id.call_local), findViewById<SurfaceViewRenderer>(R.id.call_remote), mediaListener)
             .also { it.start(offer) }
+    }
+
+    // The camera and the microphone are about to go on without anyone here
+    // having asked for it, so it shouldn't happen silently, nor without a
+    // chance to say no
+    private fun startRinging() {
+        ringing = true
+        ringLeft = RING_SECONDS
+        ringTone = try {
+            ToneGenerator(AudioManager.STREAM_VOICE_CALL, TONE_VOLUME)
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Can't play the call tone", e)
+            null
+        }
+        hangUpButton.contentDescription = getString(R.string.call_decline)
+        ring.run()
+    }
+
+    private fun stopRinging() {
+        if (!ringing) return
+        ringing = false
+        main.removeCallbacks(ring)
+        ringTone?.release()
+        ringTone = null
+        hangUpButton.contentDescription = getString(R.string.call_hang_up)
+    }
+
+    private fun answer() {
+        stopRinging()
+        if (over) return
+        Log.i(TAG, "Answering the call from $peerName")
+        status.text = getString(R.string.call_incoming, peerName)
+        startMedia()
+    }
+
+    private fun decline() {
+        if (over) return
+        Log.i(TAG, "Declined the call from $peerName")
+        tell(CallIpc.MSG_ENDED, CallIpc.KEY_END_REASON, RejectReason.DECLINED.wire)
+        endWith(null)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -173,6 +241,7 @@ class CallActivity : AppCompatActivity() {
             tell(CallIpc.MSG_ENDED)
             over = true
         }
+        stopRinging()
         media?.release()
         media = null
         main.removeCallbacksAndMessages(null)
@@ -206,6 +275,7 @@ class CallActivity : AppCompatActivity() {
                     RejectReason.UNAVAILABLE -> R.string.call_rejected_unavailable
                     RejectReason.NIGHT -> R.string.call_rejected_night
                     RejectReason.BUSY -> R.string.call_rejected_busy
+                    RejectReason.DECLINED -> R.string.call_rejected_declined
                 },
                 peerName,
             )
@@ -225,6 +295,7 @@ class CallActivity : AppCompatActivity() {
         if (closing) return
         closing = true
         over = true
+        stopRinging()
         media?.release()
         media = null
         if (text == null || isFinishing) {
@@ -241,17 +312,6 @@ class CallActivity : AppCompatActivity() {
     private fun showStatus(text: String) {
         main.removeCallbacks(showPeerName)
         status.text = text
-    }
-
-    private fun beep() {
-        val tone = try {
-            ToneGenerator(AudioManager.STREAM_VOICE_CALL, TONE_VOLUME)
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "Can't play the call tone", e)
-            return
-        }
-        tone.startTone(ToneGenerator.TONE_PROP_BEEP2, TONE_MILLIS)
-        main.postDelayed({ tone.release() }, TONE_MILLIS + 500L)
     }
 
     private fun message(what: Int): Message =
@@ -284,5 +344,8 @@ class CallActivity : AppCompatActivity() {
         private const val AWAY_MILLIS = 3_000L
         private const val TONE_VOLUME = 80
         private const val TONE_MILLIS = 400
+        // How long an incoming call rings before it connects by itself
+        private const val RING_SECONDS = 3
+        private const val RING_STEP_MILLIS = 1_000L
     }
 }
