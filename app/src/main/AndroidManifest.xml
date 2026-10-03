@@ -31,6 +31,14 @@
         android:name="android.permission.WRITE_SECURE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
 
+    <!-- Reads the lines the Portal's camera presence detection logs
+         (presence/PortalLog.kt, Presence.md), which is the only way to see it.
+         Only adb can grant it (tools/setup-device.sh); without it occupancy
+         is guessed from the screen. -->
+    <uses-permission
+        android:name="android.permission.READ_LOGS"
+        tools:ignore="ProtectedPermissions" />
+
     <!-- The home button drawn over apps that hide the Portal's own Back/Home
          bar (WhatsApp does). The user grants it in the System tab and picks the
          apps in the app list's long-press menu. -->

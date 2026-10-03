@@ -55,6 +55,26 @@ class CallsTest {
     }
 
     @Test
+    fun refusesWhileThePortalCantSee() {
+        assertEquals(
+            RejectReason.PRIVACY,
+            Calls.refusal(
+                enabled = true, allowed = true, canCapture = false, night = true, busy = true,
+                privacy = true, lensCovered = true,
+            ),
+        )
+        assertEquals(
+            RejectReason.UNAVAILABLE,
+            Calls.refusal(enabled = true, allowed = true, canCapture = true, night = true, busy = true, lensCovered = true),
+        )
+        // Privacy mode is the Portal's, not the device's settings
+        assertEquals(
+            RejectReason.NOT_ALLOWED,
+            Calls.refusal(enabled = true, allowed = false, canCapture = true, night = false, busy = false, privacy = true),
+        )
+    }
+
+    @Test
     fun rejectReasonsRoundTrip() {
         for (reason in RejectReason.entries) assertEquals(reason, RejectReason.ofWire(reason.wire))
         assertNull(RejectReason.ofWire("nonsense"))

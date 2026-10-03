@@ -15,13 +15,15 @@
 # install dialog readable again with high contrast text (see below), and grants
 # the notification access the media controls need and the device admin that
 # turns the screen off at night, which on the Portal only adb can do (see
-# below). It also grants the permissions the System tab could ask for on the
+# below), and the log access that shows what the Portal's camera presence
+# detection sees. It also grants the permissions the System tab could ask for on the
 # device (drawing over other apps, installing apps),
 # so one run leaves that tab with nothing missing.
 # To undo any of it:
 #
 #   adb shell cmd package set-home-activity com.facebook.alohaapps.launcher
 #   adb shell pm revoke com.nicobrailo.astrodock android.permission.WRITE_SECURE_SETTINGS
+#   adb shell pm revoke com.nicobrailo.astrodock android.permission.READ_LOGS
 #   adb shell settings put secure screensaver_components \
 #     com.facebook.alohaapps.launcher/com.facebook.aloha.app.home.touch.HomeDreamService
 #   adb shell appops set com.facebook.aloha.system.services SYSTEM_ALERT_WINDOW allow
@@ -77,6 +79,10 @@ adb shell settings put secure sleep_timeout 1200000
 # Secure settings, for the high contrast text below: the System tab can switch
 # it, but only with this grant.
 adb shell pm grant "$PKG" android.permission.WRITE_SECURE_SETTINGS
+# The system log, which is where the Portal's camera presence detection
+# reports somebody being seen (Presence.md); nothing else an app can reach
+# says so. The app picks it up the next time a slideshow appears.
+adb shell pm grant "$PKG" android.permission.READ_LOGS
 # Notification access, which is what lets the slideshow read and control what
 # another app is playing. The System tab has a button for it, but the screen it
 # opens (com.android.settings/.Settings$NotificationAccessSettingsActivity)
@@ -122,5 +128,7 @@ echo "screen off admin: $(adb shell dumpsys device_policy | tr -d '\r' \
 for op in SYSTEM_ALERT_WINDOW REQUEST_INSTALL_PACKAGES; do
   printf '%-18s%s\n' "$op:" "$(adb shell appops get "$PKG" "$op" | tr -d '\r' | head -1)"
 done
+echo "presence (log):   $(adb shell dumpsys package "$PKG" | tr -d '\r' \
+  | grep 'android.permission.READ_LOGS: granted=true' >/dev/null && echo "granted" || echo "MISSING") (READ_LOGS)"
 echo "media controls:   $(adb shell settings get secure enabled_notification_listeners \
   | tr -d '\r' | grep -q "$PKG" && echo "granted" || echo "MISSING") (notification access)"

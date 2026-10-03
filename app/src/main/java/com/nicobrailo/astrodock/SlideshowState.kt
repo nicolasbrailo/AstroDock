@@ -8,6 +8,7 @@ import com.nicobrailo.astrodock.immich.ImmichClient
 import com.nicobrailo.astrodock.immich.ImmichException
 import com.nicobrailo.astrodock.immich.ImmichPictureInfo
 import com.nicobrailo.astrodock.immich.RandomAlbumPicker
+import com.nicobrailo.astrodock.presence.PortalLog
 import kotlinx.coroutines.sync.Mutex
 import java.time.LocalTime
 
@@ -56,6 +57,8 @@ class SlideshowState private constructor() {
 
     fun noteTouch() {
         lastTouchAt = SystemClock.elapsedRealtime()
+        // Somebody is there, which tells whether the camera noticed
+        PortalLog.noteSomebody()
     }
 
     // When the night rule last turned the screen off, or null if it hasn't.

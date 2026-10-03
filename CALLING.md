@@ -23,7 +23,7 @@ under the same `cmd/` convention as the other commands:
 |---|---|---|
 | `cmd/call/offer` | caller | `{"call_id":"<uuid>","from":"<caller prefix>","ts":<epoch s>,"sdp":"v=0..."}` |
 | `cmd/call/answer` | callee | `{"call_id":"<uuid>","sdp":"v=0..."}` |
-| `cmd/call/reject` | callee | `{"call_id":"<uuid>","reason":"disabled"\|"not_allowed"\|"unavailable"\|"night"\|"busy"\|"declined"}` |
+| `cmd/call/reject` | callee | `{"call_id":"<uuid>","reason":"disabled"\|"not_allowed"\|"privacy"\|"unavailable"\|"night"\|"busy"\|"declined"}` |
 | `cmd/call/hangup` | either | `{"call_id":"<uuid>"}`, plus `"reason":"no_connection"` if the media never got through |
 
 - There is no `ring`: the offer is the ring. The callee rings for 3s on its
@@ -50,11 +50,19 @@ The callee replies `reject` without starting anything when, in this order
 1. calling is off on this device (`disabled`);
 2. the caller isn't on the allow list, "Who can call" in the MQTT tab
    (`not_allowed`);
-3. the camera or microphone permission is missing (`unavailable`);
-4. the night rule applies (`night`): the night hours, with the night rule on,
+3. the Portal is in privacy mode, which turns its camera and microphone off
+   (`privacy`);
+4. the camera or microphone permission is missing, or the lens cover is
+   closed (`unavailable`);
+5. the night rule applies (`night`): the night hours, with the night rule on,
    and nobody having touched the slideshow for 5 minutes
    (`SlideshowState.nightRuleApplies`);
-5. a call is already under way (`busy`).
+6. a call is already under way (`busy`).
+
+Privacy mode and the lens cover are read off the Portal's log
+(`presence/PortalLog.kt`, `Presence.md`), so they are only noticed with the
+`READ_LOGS` grant. A caller on an older version doesn't know `privacy`, and
+says the call ended.
 
 Two devices calling each other at once are each busy, so each rejects the
 other.

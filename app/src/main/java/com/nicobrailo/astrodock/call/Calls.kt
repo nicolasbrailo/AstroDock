@@ -22,8 +22,11 @@ enum class RejectReason(val wire: String) {
     DISABLED("disabled"),
     // The caller isn't on the callee's list
     NOT_ALLOWED("not_allowed"),
-    // The callee can't use its camera or microphone
+    // The callee can't use its camera or microphone, or its lens is covered
     UNAVAILABLE("unavailable"),
+    // The callee is in the Portal's privacy mode, which turns its camera and
+    // microphone off
+    PRIVACY("privacy"),
     // The callee's night rule applies
     NIGHT("night"),
     // The callee is in another call
@@ -79,16 +82,22 @@ object Calls {
     // Why an offer can't be taken, or null if it can. The order is what the
     // caller is told when several apply: the ones that won't change by calling
     // again later come first.
+    // privacy and lensCovered are the Portal's own (PortalLog), false where
+    // its log can't be read.
     fun refusal(
         enabled: Boolean,
         allowed: Boolean,
         canCapture: Boolean,
         night: Boolean,
         busy: Boolean,
+        privacy: Boolean = false,
+        lensCovered: Boolean = false,
     ): RejectReason? = when {
         !enabled -> RejectReason.DISABLED
         !allowed -> RejectReason.NOT_ALLOWED
-        !canCapture -> RejectReason.UNAVAILABLE
+        privacy -> RejectReason.PRIVACY
+        // A call with the microphone but no picture is no use on a Portal
+        !canCapture || lensCovered -> RejectReason.UNAVAILABLE
         night -> RejectReason.NIGHT
         busy -> RejectReason.BUSY
         else -> null

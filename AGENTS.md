@@ -280,8 +280,12 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   `state` is one record of everything else about the device, published only
   when some of it changes (never on a timer), with `ts` the time of the
   change. Unknown is `null` rather than left out:
-  `occupancy` (`occupied` and `source`, a guess from the screen, see
-  `Occupancy`; there's no `distance_cm`, having no mmWave sensor);
+  `occupancy` (`occupied`, `source`, `since` and `blind_reason`; see
+  `presence/` below: from the Portal's camera, `source: "camera"`, while its
+  log can be read, with `occupied: null` and why in `blind_reason`
+  (`privacy`, `lens_covered`, `sleep`, `unknown`) while the camera can't see;
+  otherwise a guess from the screen, see `Occupancy`, with `since` and
+  `blind_reason` null; there's no `distance_cm`, having no mmWave sensor);
   `slideshow` (`active`: pictures visible, so the screen is on and the night
   cover isn't; `shown_in`, `home` or `screensaver`, the one that appeared
   last, since they hand over in either order; `night_cover`; and
@@ -292,11 +296,18 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   most of the time. `on` for `force_on`, `install` or `call`, `off` for `force_off`
   until the screen next comes on, or `night` while the night rule applies.
   `DeviceState.screenWish` holds the order, unit tested. Comparing it with
-  `on` shows the Portal waking a screen we want off);
+  `on` shows the Portal waking a screen we want off; and, from the Portal's
+  log while `PortalLog` reads it, null otherwise, `portal_state`
+  (`AMBIENT`, `STANDBY`, `SLEEP`, see `Presence.md`), and `last_wake` and
+  `last_sleep`, each `{cause, at, details, by}`: the cause is `presence`,
+  `button`, `screensaver_end` or `app` for a wake, and `timeout`, `button`,
+  `lock` or `other` for a sleep, `details` the power manager's own words,
+  and `by` is `night` or `force_off` for a lock of ours (`ScreenControl`
+  records each `lockNow()` with its reason), null for anything else);
   `call` (`state`: `idle`, `outgoing`, `incoming` or `in_call`; `with`, the
   other device's prefix; `since`);
-  `errors` (`[{source, message}]`, `immich` and `weather`, cleared once they
-  work again); `battery` (level, status, plugged, health, technology,
+  `errors` (`[{source, message}]`, `immich`, `weather` and `presence`,
+  cleared once they work again); `battery` (level, status, plugged, health, technology,
   temperature and voltage; `null` on a Portal without one); `wifi_rssi`;
   `light_lux`; and `app` (version, and `started_at` and `device_booted_at` as
   timestamps, so uptime doesn't change the record).
@@ -378,7 +389,8 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   in its own process (`:call`), so a crash in WebRTC's native code doesn't
   cost AstroDock the home screen (measured: it doesn't). `CallRouter` (main
   process) takes or refuses an offer (`Calls.refusal`: off, not on the allow
-  list, no camera or microphone, night, busy), wakes the device, and starts
+  list, privacy mode, no camera or microphone or the lens covered, night,
+  busy; the Portal's two from `PortalLog`), wakes the device, and starts
   `CallActivity` (`:call`), which rings an incoming call for 3s with a
   countdown, counted only while the call can be seen (the hang up button
   declines it then, a `reject` with `declined`), and then does the media (`CallMedia`) and nothing else: everything it sends goes through `CallSignalService` (main process,
@@ -401,6 +413,31 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   when a slideshow last appeared (`noteScreensaver`, called from
   `SlideshowController.start()`), so a screensaver chosen on purpose stays.
   See the platform note on installing over the running app.
+- `presence/PortalPresence.kt` + `presence/PortalLog.kt`: what the Portal's own
+  camera presence detection sees, read off the system log (`Presence.md`
+  has what it logs and why it can be trusted). `PortalLog` (one per process,
+  main process only, started by `StateReporter`) follows `logcat` for five
+  tags (`PortalPresence.TAGS`), from an hour back so a covered lens or
+  privacy mode from before the app started is known, and restarts it if it
+  ends. It needs `READ_LOGS`, which only adb grants
+  (`tools/setup-device.sh`, and an adb-only item in the System tab); it
+  isn't started without it, since a logcat started before the grant only
+  ever sees the app's own lines, and every `applySettings()` tries again.
+  `PortalPresence` is pure and unit tested on lines copied from both
+  Portals: "somebody" while a `Notify people presence` came in the last 75s
+  (they come every 30s), "nobody" after that, and blind (`null`, with the
+  reason) in privacy mode, with the lens cover closed, or in the `SLEEP`
+  the power button causes, which turns the camera off. It judges a line by
+  its own timestamp, so the startup backlog dates an absence when it
+  happened. Lines it doesn't know change nothing, so a firmware that words
+  them differently degrades to "nobody", never to a false "somebody".
+  It also notices the detection getting stuck, as it once did on a Portal+
+  until a reboot (`stuck`): somebody demonstrably there (a touch on the
+  slideshow, through `SlideshowState.noteTouch`, or a button wake) at least
+  twice, 5 minutes apart, with the camera able to see and not one report in
+  between. `StateReporter` then adds a `presence` entry to `errors` and puts
+  it in the alert corner beside any broker alert; the next report clears
+  it. An app can't restart the detection, so it only tells.
 - `ScreenAdminReceiver.kt` + `res/xml/device_admin.xml`: device admin with the
   force-lock policy only, so the app can turn the screen off. On the Portal the
   System tab's button doesn't work (see the platform notes), so
@@ -603,7 +640,8 @@ documents the API). Keep the two behaving the same.
   Portal, which is why the script does it.
 - Errors are shown in a text overlay over the picture.
 - Whatever is wrong with the MQTT broker is shown in the top right corner (see
-  `StateReporter`). Only the home screen shows it: the screensaver is what runs
+  `StateReporter`), and so is the Portal's presence detection looking stuck
+  (`PortalPresence.stuck`). Only the home screen shows it: the screensaver is what runs
   all night, with nobody looking, so it isn't the place to complain.
 - When the activity starts again, it reloads the settings. If they changed, it
   rebuilds the client and picker and clears the history. If not, it calls
@@ -664,7 +702,8 @@ every string black or white. The MQTT tab's "Calls" section: whether this
 device takes part in calls (default off; it then rings for 3s, when the
 call can be declined, and answers by itself), and who can call it, as comma separated topic prefixes (empty means
 any device on the broker, so the broker's own access control is what really
-decides). Calls are refused while the night rule applies.
+decides). Calls are refused while the night rule applies, and while the Portal is in
+privacy mode or its lens is covered.
 
 **Night screen off** (`SlideshowController.checkNight`). The night rule applies
 while the hour is inside the night window and nothing has touched the slideshow
@@ -680,17 +719,32 @@ nothing an app can reach stops that:
   brings the pictures back; in the screensaver a touch wakes to the home
   screen, which then isn't dark because of that touch.
 - **Off**: `lockNow()`, from the check that runs every 30s (the first 20s after
-  the slideshow appears). It isn't repeated for 10 minutes
+  the slideshow appears), when `ScreenControl.nightLockNow` (unit tested)
+  says it will stick. While `PortalLog` reads the camera's reports: not while
+  they say somebody is in view (the Portal would only wake it again, so it
+  stays black and dim), at the first check after they stop (75s without
+  one), which leaves the Portal in `STANDBY` to wake into the cover when
+  somebody comes back; at once when the screen came on with nobody seen;
+  and at once while the camera can't see (privacy mode, the lens cover),
+  since nothing will wake it then. A button press holds it off for 5
+  minutes, like a touch. Without the log (no `READ_LOGS`, or too early to
+  say) it falls back to locking at most every 10 minutes
   (`NIGHT_RELOCK_MILLIS`, timed from `SlideshowState.lastNightLockAt`, which
-  survives the handover to a new screensaver): if the Portal wakes the screen
-  in that time, someone is in view and it stays black and dim. With nobody in
-  view the screen stays off. Locking again on every wake, as the first version
-  did, made the pictures blink on and off all night.
+  survives the handover to a new screensaver), by when whoever woke it may
+  have gone. Locking again on every wake, as the first version did, made the
+  pictures blink on and off all night.
 Both need the device admin: without it the rule does nothing, matching the
 greyed out setting. Changing these settings doesn't disturb the pictures: only
 the server and sampling settings reset the slideshow.
 
 ## Portal platform notes (measured on the device, 2026-09-17)
+
+`Presence.md` has the Portal's presence detection in full, as measured on
+2026-10-03 on a Portal+ and a Portal Go: the log lines that report it, the
+Portal's states (`AMBIENT`, `STANDBY`, `SLEEP`), the screen's whole on/off
+cycle, the lens cover and privacy mode, and the detector getting stuck. It
+supersedes the notes below where they disagree. `TODO.md` is the plan for
+using it.
 
 - Production `user` build, no root. adb runs as `shell`. The Portal launcher
   (`com.facebook.alohaapps.launcher`) holds the HOME role.
@@ -701,10 +755,11 @@ the server and sampling settings reset the slideshow.
   manager without changing the lights, which keeps the device awake. When the
   screen is off, it wakes it (`Full_Wakeup_PresenceManager`). The camera keeps
   watching while the screen is off.
-- A third-party app **can't** read presence directly. The broadcasts
+- A third-party app **can't** ask for presence directly. The broadcasts
   (`RECEIVE_PRESENCE_TRANSITION`), the state content providers
   (`ACCESS_STATESDB`) and `IDLE_SCREEN_*` are all `signature` or `privileged`.
-- What an app **can** see: the effects. `SCREEN_ON`/`SCREEN_OFF` and
+  It can read the log lines that report it, with `READ_LOGS` (`Presence.md`).
+- What an app **can** see without that: the effects. `SCREEN_ON`/`SCREEN_OFF` and
   `DREAMING_STARTED`/`DREAMING_STOPPED` broadcasts (register them in code, not
   in the manifest), and the light sensor.
 - **Timers:** `screen_off_timeout` (system setting) decides when the screensaver
@@ -716,15 +771,12 @@ the server and sampling settings reset the slideshow.
   from the night rule and MQTT's `force_on`/`force_off`, the app doesn't touch
   the screen: no wake lock, and no keep-screen-on flag, not even on the
   screensaver's window (see `SlideshowDreamService`).
-- **`Notify people presence` in the log does not mean somebody was seen.** The
-  camera logs that line every 30s as a periodic update carrying a value. What
-  counts is whether the Portal then pokes the power manager, and only
-  `dumpsys power` shows that (`mLastUserActivityTimeNoChangeLights`). Measured
-  with the device facing a wall: the log line appeared every 30s while the poke
-  age climbed 141s -> 300s, i.e. no detection at all. A poke does reset the
-  countdown, so the screen stays on while the camera genuinely sees someone.
-  Don't read the log line as presence, and don't expect an app to observe the
-  pokes: only the *arrival edge* is visible, as a screen-on nothing else caused.
+- **`Notify people presence` in the log does mean somebody was seen**
+  (`Presence.md`). An earlier note here said it didn't: the line kept coming
+  facing a wall while `mLastUserActivityTimeNoChangeLights` didn't move. But
+  presence only moves that field while the screensaver runs, never while the
+  screen is awake, which is the likely explanation; with tape over the camera
+  the line stops, on the Go and the Portal+ alike.
 - **The screen going off with somebody in the room** therefore means the camera
   isn't seeing them, not that presence is being ignored. The Portal's own delay
   is 20 minutes, long enough to ride that out; anything much shorter blinks.
@@ -838,7 +890,8 @@ the server and sampling settings reset the slideshow.
 - `tools/setup-device.sh` takes no arguments: it applies everything an app can't
   set for itself (home screen, screensaver, the Portal's own screen timers,
   bug pill, app verifier, high contrast text for the install dialog,
-  notification access, the device admin, and the app-ops behind the System
+  notification access, the device admin, `READ_LOGS` for `PortalLog`, and
+  the app-ops behind the System
   tab's other permissions: `SYSTEM_ALERT_WINDOW`, `REQUEST_INSTALL_PACKAGES`)
   and prints the result.
   Its header lists the commands to undo each one. Nothing else is needed.

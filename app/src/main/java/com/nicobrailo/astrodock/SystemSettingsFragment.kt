@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import com.nicobrailo.astrodock.call.CallSettings
+import com.nicobrailo.astrodock.presence.PortalLog
 
 // What the app needs from the system. At the top, a list of what is missing
 // and what doesn't work without it, with a pointer to tools/setup-device.sh,
@@ -215,6 +216,16 @@ class SystemSettingsFragment : Fragment() {
                 done = ScreenControl.canWriteSecureSettings(context),
                 intent = null,
                 missing = getString(R.string.system_sleep_timeout_missing),
+                adbOnly = true,
+            ),
+            // Another adb-only grant, with its command in the description
+            Item(
+                title = getString(R.string.system_logs_title),
+                description = getString(R.string.system_logs_description),
+                buttonText = null,
+                done = PortalLog.canRead(context),
+                intent = null,
+                missing = getString(R.string.system_logs_missing),
                 adbOnly = true,
             ),
             // The only one the app switches itself, so it has no system screen

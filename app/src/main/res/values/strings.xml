@@ -29,6 +29,7 @@
     <string name="slideshow_not_configured">Tap the screen, then the settings button, to set the Immich server URL and API key.</string>
     <string name="slideshow_loading">Loading pictures…</string>
     <string name="mqtt_alert_connect">Can\'t reach the MQTT broker at %1$s:%2$d\n%3$s</string>
+    <string name="presence_stuck">The Portal\'s camera presence detection seems to have stopped: it hasn\'t seen anybody in over 5 minutes of the screen being used.\nRestart the Portal if the screen stops waking up when somebody comes in.</string>
     <string name="mqtt_alert_no_answer">No answer from the MQTT broker at %1$s:%2$d\nSomething is listening there, but it isn\'t answering as a broker. Check the port.</string>
     <string name="mqtt_alert_lost">Lost the MQTT broker at %1$s:%2$d\n%3$s</string>
     <string name="mqtt_alert_prefix_taken">Not connecting to the MQTT broker: the topic prefix %1$s belongs to another device (%2$s)\nGive this device its own prefix in the MQTT tab, or, if that device is gone, clear its record with mosquitto_pub -r -n -t %3$s</string>
@@ -50,6 +51,7 @@
     <string name="system_home_missing">Not the home screen: Home opens the Portal\'s own launcher</string>
     <string name="system_dream_missing">Not the screensaver: the Portal shows its own when idle</string>
     <string name="system_admin_missing">Missing power permission: the screen can\'t be turned off at night</string>
+    <string name="system_logs_missing">Missing log access: whether somebody is there is guessed from the screen</string>
     <string name="system_sleep_timeout_missing">Missing secure settings permission: high contrast text can\'t be changed</string>
     <string name="system_overlay_missing">Missing overlay permission: no home button over apps like WhatsApp</string>
     <string name="system_media_missing">Missing notification access: no media controls on the slideshow</string>
@@ -70,6 +72,8 @@
     <string name="system_admin_explanation">AstroDock uses this only to turn the screen off.</string>
 
 
+    <string name="system_logs_title">Read the Portal\'s presence detection</string>
+    <string name="system_logs_description">Lets the app see whether the Portal\'s camera sees somebody, which it only reports in the system log, for the MQTT report and for refusing calls in privacy mode. Without it, whether somebody is there is guessed from the screen. Only adb can allow this:\n\nadb shell pm grant com.nicobrailo.astrodock android.permission.READ_LOGS</string>
     <string name="system_sleep_timeout_title">Change secure settings</string>
     <string name="system_sleep_timeout_description">Lets the app switch high contrast text on and off, below. Only adb can allow this:\n\nadb shell pm grant com.nicobrailo.astrodock android.permission.WRITE_SECURE_SETTINGS</string>
 
@@ -204,6 +208,7 @@
     <string name="call_rejected_disabled">%1$s doesn\'t take calls</string>
     <string name="call_rejected_not_allowed">%1$s doesn\'t take calls from this device</string>
     <string name="call_rejected_unavailable">%1$s can\'t use its camera or microphone</string>
+    <string name="call_rejected_privacy">%1$s is in privacy mode</string>
     <string name="call_rejected_night">It\'s night time at %1$s</string>
     <string name="call_rejected_busy">%1$s is in another call</string>
     <string name="call_rejected_declined">%1$s declined the call</string>

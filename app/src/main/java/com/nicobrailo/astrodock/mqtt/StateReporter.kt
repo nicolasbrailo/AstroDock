@@ -31,6 +31,8 @@ import com.nicobrailo.astrodock.call.CallVerb
 import com.nicobrailo.astrodock.call.Calls
 import com.nicobrailo.astrodock.immich.AlbumFilter
 import com.nicobrailo.astrodock.immich.ImmichPictureInfo
+import com.nicobrailo.astrodock.presence.PortalLog
+import com.nicobrailo.astrodock.presence.PortalPresence
 import com.nicobrailo.astrodock.weather.millisToNextHour
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +60,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.abs
 
 // Publishes what this device is doing to an MQTT broker, following the
 // homeboard bridge's topics (see its README):
@@ -83,8 +86,9 @@ import java.util.concurrent.atomic.AtomicLong
 // them (see CALLING.md).
 //
 // Differences from the spec, all because this is a Portal and not the
-// homeboard: there is no `distance_cm` (no mmWave sensor, and occupancy is a
-// guess from the screen — see Occupancy), and the render config fields of
+// homeboard: there is no `distance_cm` (no mmWave sensor; occupancy comes from
+// the Portal's camera, read off the log by PortalLog, or failing that is a
+// guess from the screen, see Occupancy), and the render config fields of
 // availability are left out because nothing here has them.
 //
 // One instance per process. Its methods are safe to call from the main thread:
@@ -102,10 +106,17 @@ class StateReporter private constructor(private val context: Context) {
     private var commandListener: ((Command) -> Unit)? = null
     // What is wrong with the broker, null while it is fine. Nothing on screen
     // depends on MQTT, so a broker that can't be reached would otherwise only
-    // show up in the log; the slideshow puts this in a corner instead.
+    // show up in the log; the slideshow puts this in a corner instead. The
+    // Portal's presence detection getting stuck goes there too, since the
+    // only other sign of it is a screen that doesn't wake.
     @Volatile
     var alert: String? = null
         private set
+    @Volatile
+    private var brokerAlert: String? = null
+    @Volatile
+    private var presenceAlert: String? = null
+    private var watchingPortal = false
     @Volatile
     private var alertListener: ((String?) -> Unit)? = null
     private var settings: MqttSettings? = null
@@ -212,6 +223,10 @@ class StateReporter private constructor(private val context: Context) {
     // whenever the slideshow becomes visible, so edits in the MQTT tab take
     // effect without a restart.
     fun applySettings() {
+        // Every time rather than once, so a grant given over adb while the app
+        // runs is picked up the next time a slideshow appears. Before the
+        // broker settings, since the alert and the calls need it without MQTT.
+        watchPortal()
         // Not part of MqttSettings, since it doesn't need a new connection:
         // the record only has to say so
         val calls = CallSettings.load(context).enabled
@@ -265,6 +280,12 @@ class StateReporter private constructor(private val context: Context) {
     }
 
     private fun setAlert(message: String?) {
+        brokerAlert = message
+        showAlert()
+    }
+
+    private fun showAlert() {
+        val message = listOfNotNull(brokerAlert, presenceAlert).joinToString("\n\n").ifEmpty { null }
         if (message == alert) return
         alert = message
         val listener = alertListener ?: return
@@ -810,7 +831,7 @@ class StateReporter private constructor(private val context: Context) {
                 if (ScreenControl.canTurnScreenOff(context)) {
                     forcedOff = true
                     publishState()
-                    ScreenControl.turnScreenOff(context)
+                    ScreenControl.turnScreenOff(context, ScreenControl.FORCE_OFF)
                 } else {
                     // Needs the device admin from the System tab
                     Log.w(TAG, "Can't turn the screen off: no device admin")
@@ -894,11 +915,11 @@ class StateReporter private constructor(private val context: Context) {
         // A call holds the screen with its window, not a wake lock
         val holdReason = hold?.reason ?: CallRouter.SCREEN_REASON.takeIf { call.active }
         val wish = DeviceState.screenWish(holdReason, forcedOff, slideshow.nightRuleApplies(context, now))
-        val guess = Occupancy.guess(screenOn, now - screenChangedAt, screensaverAfterMillis())
         val filter = slideshow.currentSettings?.albumFilter
+        val portal = PortalLog.presence.takeIf { PortalLog.isReading }
 
         return JSONObject()
-            .put("occupancy", JSONObject().put("occupied", guess.occupied).put("source", guess.source))
+            .put("occupancy", occupancyJson(now))
             .put(
                 "slideshow",
                 JSONObject()
@@ -917,6 +938,11 @@ class StateReporter private constructor(private val context: Context) {
                     .put("screensaver", orNull(dreaming))
                     .put("wanted", orNull(wish.wanted))
                     .put("wanted_reason", orNull(wish.reason))
+                    // What the Portal says it is doing, and who last turned
+                    // the screen on and off, from its log (PortalLog)
+                    .put("portal_state", orNull(portal?.portalState))
+                    .put("last_wake", orNull(portal?.lastWake?.let { screenChangeJson(it) }))
+                    .put("last_sleep", orNull(portal?.lastSleep?.let { screenChangeJson(it) }))
             )
             .put("errors", JSONArray().apply {
                 for ((source, message) in errors) put(JSONObject().put("source", source).put("message", message))
@@ -938,10 +964,46 @@ class StateReporter private constructor(private val context: Context) {
             )
     }
 
+    // From the Portal's camera while its log can be read, with why it can't
+    // see when it can't; otherwise the guess from the screen, which can't
+    // tell when the camera is blind
+    private fun occupancyJson(now: Long): JSONObject {
+        if (PortalLog.isReading) {
+            val presence = PortalLog.presence
+            presence.update(System.currentTimeMillis())
+            val verdict = presence.verdict
+            return JSONObject()
+                .put("occupied", orNull(verdict.occupied))
+                .put("source", Occupancy.CAMERA)
+                .put("since", orNull(presence.verdictSince?.let { it / 1000 }))
+                .put("blind_reason", orNull(verdict.blind?.wire))
+        }
+        val guess = Occupancy.guess(screenOn, now - screenChangedAt, screensaverAfterMillis())
+        return JSONObject()
+            .put("occupied", guess.occupied)
+            .put("source", guess.source)
+            .put("since", JSONObject.NULL)
+            .put("blind_reason", JSONObject.NULL)
+    }
+
+    // A lock is ours if we called lockNow() just before the line was logged,
+    // and then `by` says why; another device admin's leaves it null
+    private fun screenChangeJson(change: PortalPresence.ScreenChange): JSONObject {
+        val ours = ScreenControl.lastLock?.takeIf { (_, at) -> abs(change.at - at) < OUR_LOCK_MILLIS }
+        return JSONObject()
+            .put("cause", change.cause)
+            .put("at", change.at / 1000)
+            .put("details", change.details)
+            .put("by", orNull(ours?.first?.takeIf { change.cause == PortalPresence.SLEEP_LOCK }))
+    }
+
     private fun scheduleRecheck(now: Long) {
         val slideshow = SlideshowState.shared
         val screensaverAfter = screensaverAfterMillis()
+        val wallNow = System.currentTimeMillis()
         val deadlines = listOfNotNull(
+            // The last camera report expiring, in this clock
+            PortalLog.presence.nextChangeAt(wallNow)?.let { now + (it - wallNow) },
             ScreenControl.hold()?.until,
             // When an untouched screen would have slept, if it's still on
             if (screenOn && screensaverAfter > 0) screenChangedAt + screensaverAfter else null,
@@ -1058,6 +1120,30 @@ class StateReporter private constructor(private val context: Context) {
         }
     }
 
+    private fun watchPortal() {
+        if (!watchingPortal) {
+            watchingPortal = true
+            PortalLog.addListener {
+                checkPresenceStuck()
+                publishState()
+            }
+        }
+        PortalLog.start(context)
+    }
+
+    // Called on the main thread with every change PortalLog sees
+    private fun checkPresenceStuck() {
+        val message = if (PortalLog.isReading && PortalLog.presence.stuck) {
+            context.getString(R.string.presence_stuck)
+        } else {
+            null
+        }
+        if (message == presenceAlert) return
+        presenceAlert = message
+        if (message == null) errors.remove(PRESENCE_ERROR) else errors[PRESENCE_ERROR] = message
+        showAlert()
+    }
+
     private fun availabilityPayload(online: Boolean): JSONObject {
         // The offline payload carries only what can't go stale: no IP (DHCP
         // drifts) and nothing derived, as in the spec
@@ -1156,6 +1242,10 @@ class StateReporter private constructor(private val context: Context) {
         private const val NO_RSSI = -127
         private const val RECHECK_SLACK_MILLIS = 500L
         private const val GATHER_MILLIS = 300L
+        // The `errors` source for the Portal's presence detection
+        private const val PRESENCE_ERROR = "presence"
+        // How close to our lockNow() a lock in the log has to be to be ours
+        private const val OUR_LOCK_MILLIS = 5_000L
         // How long force_on holds the screen before the usual timeouts resume
         private const val FORCE_ON_MILLIS = 30 * 60 * 1000L
         // How long an announcement that failed says so on screen

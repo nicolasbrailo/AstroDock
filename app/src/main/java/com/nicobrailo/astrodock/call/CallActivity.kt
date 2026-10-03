@@ -314,6 +314,7 @@ class CallActivity : AppCompatActivity() {
                     RejectReason.DISABLED -> R.string.call_rejected_disabled
                     RejectReason.NOT_ALLOWED -> R.string.call_rejected_not_allowed
                     RejectReason.UNAVAILABLE -> R.string.call_rejected_unavailable
+                    RejectReason.PRIVACY -> R.string.call_rejected_privacy
                     RejectReason.NIGHT -> R.string.call_rejected_night
                     RejectReason.BUSY -> R.string.call_rejected_busy
                     RejectReason.DECLINED -> R.string.call_rejected_declined

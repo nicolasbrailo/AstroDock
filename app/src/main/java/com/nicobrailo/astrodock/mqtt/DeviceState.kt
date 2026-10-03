@@ -22,9 +22,9 @@ object DeviceState {
     // screen that is being used anyway.
     fun screenWish(hold: String?, forcedOff: Boolean, night: Boolean): ScreenWish = when {
         hold == ScreenControl.FORCE_ON -> ScreenWish("on", ScreenControl.FORCE_ON)
-        forcedOff -> ScreenWish("off", "force_off")
+        forcedOff -> ScreenWish("off", ScreenControl.FORCE_OFF)
         hold != null -> ScreenWish("on", hold)
-        night -> ScreenWish("off", "night")
+        night -> ScreenWish("off", ScreenControl.NIGHT)
         else -> NO_WISH
     }
 

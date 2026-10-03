@@ -39,6 +39,8 @@ import com.nicobrailo.astrodock.immich.ImmichPictureSize
 import com.nicobrailo.astrodock.media.NowPlaying
 import com.nicobrailo.astrodock.overlay.HomeButtonApps
 import com.nicobrailo.astrodock.overlay.HomeButtonService
+import com.nicobrailo.astrodock.presence.PortalLog
+import com.nicobrailo.astrodock.presence.PortalPresence
 import androidx.preference.PreferenceManager
 import com.nicobrailo.astrodock.mqtt.Command
 import com.nicobrailo.astrodock.mqtt.StateReporter
@@ -711,14 +713,15 @@ class SlideshowController(
 
     // Keeps the screen dark during the night hours. Switching it off isn't
     // enough on its own: while the Portal's camera sees someone, its presence
-    // detection wakes the screen about every 30s and starts the screensaver,
-    // and nothing an app can reach stops that. Locking again on every wake made
-    // the pictures blink on and off all night. So at night the slideshow is
-    // covered in black with the backlight at its lowest, from the moment it
-    // appears, and the screen is only switched off when that is likely to
-    // stick: the first time, and then again once NIGHT_RELOCK_MILLIS have
-    // passed, by when whoever woke it may have gone. If they haven't, the wake
-    // that follows is from black to black.
+    // detection wakes the screen and starts the screensaver, and nothing an
+    // app can reach stops that. Locking again on every wake made the pictures
+    // blink on and off all night. So at night the slideshow is covered in
+    // black with the backlight at its lowest, from the moment it appears, and
+    // the screen is only switched off when that will stick, which is
+    // ScreenControl.nightLockNow's decision: once the camera stops seeing
+    // anybody, or, when the Portal's log can't be read, at most every
+    // NIGHT_RELOCK_MILLIS. If somebody is still there, the wake that follows
+    // is from black to black.
     private fun startNightWatch() {
         nightJob?.cancel()
         // Straight away, so a screen the Portal has just woken never shows a
@@ -741,11 +744,19 @@ class SlideshowController(
         setDark(night)
         if (!night || !mayLock) return
 
-        val lockedAt = state.lastNightLockAt
-        if (lockedAt != null && now - lockedAt < NIGHT_RELOCK_MILLIS) return
+        val wallNow = System.currentTimeMillis()
+        val portal = PortalLog.presence.takeIf { PortalLog.isReading }
+        portal?.update(wallNow)
+        val buttonWake = portal?.lastWake?.takeIf { it.cause == PortalPresence.WAKE_BUTTON }
+        val lockNow = ScreenControl.nightLockNow(
+            sinceLastLockMillis = state.lastNightLockAt?.let { now - it },
+            camera = portal?.verdict,
+            sinceButtonWakeMillis = buttonWake?.let { wallNow - it.at },
+        )
+        if (!lockNow) return
         state.lastNightLockAt = now
-        Log.i(TAG, "Night hours: turning the screen off")
-        ScreenControl.turnScreenOff(context)
+        Log.i(TAG, "Night hours: turning the screen off (camera: ${portal?.verdict})")
+        ScreenControl.turnScreenOff(context, ScreenControl.NIGHT)
     }
 
     // Covers the pictures in black and turns the backlight down to its lowest
@@ -1023,9 +1034,6 @@ class SlideshowController(
 
         const val NIGHT_CHECK_MILLIS = 30_000L
         const val NIGHT_FIRST_CHECK_MILLIS = 20_000L
-        // How long after switching the screen off at night it is left on if
-        // the Portal wakes it again, which means its camera still sees someone
-        const val NIGHT_RELOCK_MILLIS = 10 * 60 * 1000L
         // The lowest backlight level there is (1 of 255)
         const val NIGHT_BRIGHTNESS = 1f / 255
         // How much harder it is to drag when there is no picture to move to

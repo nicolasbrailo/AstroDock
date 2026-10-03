@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
+import com.nicobrailo.astrodock.presence.PortalPresence
 
 // What the app does to the screen, which is as little as possible: the Portal
 // decides when the screensaver starts and when the screen goes off, from its
@@ -21,6 +22,9 @@ import android.util.Log
 object ScreenControl {
     private const val TAG = "ScreenControl"
     const val FORCE_ON = "force_on"
+    // Why turnScreenOff was called, as the MQTT state names it
+    const val FORCE_OFF = "force_off"
+    const val NIGHT = "night"
 
     // Whether `hour` falls in the night window, which usually wraps past
     // midnight (0 to 6 doesn't, 22 to 6 does). An empty window is never night.
@@ -28,6 +32,42 @@ object ScreenControl {
         startHour == endHour -> false
         startHour < endHour -> hour in startHour until endHour
         else -> hour >= startHour || hour < endHour
+    }
+
+    // How long after switching the screen off at night it is left on if the
+    // Portal wakes it again, when its log can't say why it did
+    const val NIGHT_RELOCK_MILLIS = 10 * 60 * 1000L
+
+    // How long a button press holds the night rule off, like a touch does
+    const val NIGHT_BUTTON_GRACE_MILLIS = 5 * 60 * 1000L
+
+    // Whether the night rule should switch the screen off now, given how long
+    // ago it last did (null if it hasn't), what the Portal's camera sees
+    // (PortalPresence's verdict, null when its log can't be read) and how long
+    // ago a button woke the screen (null if nothing did).
+    //
+    // The Portal wakes the screen whenever its camera sees somebody, and
+    // nothing an app can reach stops that, so locking while somebody is in
+    // view only makes the screen blink. With the camera's reports:
+    // - somebody in view: leave the screen on, under the black dimmed cover,
+    //   and lock once the reports stop, which leaves the Portal in STANDBY,
+    //   from which the next person in view wakes it into the cover again;
+    // - nobody seen: lock at once, whatever woke the screen;
+    // - the camera can't see (privacy mode, the lens cover): lock, since
+    //   nothing will wake it again;
+    // - a button pressed lately: somebody wants the device, so leave it.
+    // Without them (no grant, or too early to say) it falls back to locking
+    // at most every NIGHT_RELOCK_MILLIS, by when whoever woke it may be gone.
+    fun nightLockNow(
+        sinceLastLockMillis: Long?,
+        camera: PortalPresence.Verdict?,
+        sinceButtonWakeMillis: Long?,
+    ): Boolean = when {
+        camera == null || camera.blind == PortalPresence.Blind.UNKNOWN ->
+            sinceLastLockMillis == null || sinceLastLockMillis >= NIGHT_RELOCK_MILLIS
+        sinceButtonWakeMillis != null && sinceButtonWakeMillis < NIGHT_BUTTON_GRACE_MILLIS -> false
+        camera.blind != null -> true
+        else -> camera.occupied != true
     }
 
     // True once adb has granted it (see tools/setup-device.sh); only high
@@ -130,11 +170,19 @@ object ScreenControl {
         return dpm?.isAdminActive(ScreenAdminReceiver.component(context)) == true
     }
 
+    // The last turnScreenOff: why, and when (wall clock), so the MQTT state can
+    // tell our lockNow() from another device admin's in the power manager's log
+    @Volatile
+    var lastLock: Pair<String, Long>? = null
+        private set
+
     // Switches the screen off. The Portal's presence detection may well wake it
-    // again, and the night check then switches it off once more.
-    fun turnScreenOff(context: Context) {
+    // again, and the night check then switches it off once more. `reason` is
+    // FORCE_OFF or NIGHT.
+    fun turnScreenOff(context: Context, reason: String) {
         val dpm = context.getSystemService(DevicePolicyManager::class.java) ?: return
         try {
+            lastLock = reason to System.currentTimeMillis()
             dpm.lockNow()
         } catch (e: SecurityException) {
             // The admin was deactivated since it was last checked

@@ -14,6 +14,7 @@ import com.nicobrailo.astrodock.ScreenControl
 import com.nicobrailo.astrodock.SlideshowState
 import com.nicobrailo.astrodock.mqtt.Command
 import com.nicobrailo.astrodock.mqtt.StateReporter
+import com.nicobrailo.astrodock.presence.PortalLog
 import org.json.JSONObject
 import java.util.UUID
 
@@ -140,6 +141,8 @@ class CallRouter private constructor(private val context: Context) {
             canCapture = CallSettings.canCapture(context),
             night = SlideshowState.shared.nightRuleApplies(context),
             busy = call != null,
+            privacy = PortalLog.isReading && PortalLog.presence.privacy,
+            lensCovered = PortalLog.isReading && PortalLog.presence.lensCovered,
         )
         if (refusal != null) {
             Log.i(TAG, "Refusing a call from $from: ${refusal.wire}")
