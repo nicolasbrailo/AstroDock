@@ -61,8 +61,10 @@ cat > "$WORK/AndroidManifest.xml" <<EOF
 </manifest>
 EOF
 
+# minSdk 28, like the app: the older Portal+ is Android 9 and refuses an APK
+# that asks for more
 "$BUILD_TOOLS/aapt2" link --manifest "$WORK/AndroidManifest.xml" -I "$ANDROID_JAR" \
-  --min-sdk-version 29 --target-sdk-version 29 -o "$WORK/unsigned.apk"
+  --min-sdk-version 28 --target-sdk-version 29 -o "$WORK/unsigned.apk"
 "$BUILD_TOOLS/zipalign" -f 4 "$WORK/unsigned.apk" "$WORK/aligned.apk"
 "$BUILD_TOOLS/apksigner" sign --ks "$KEYSTORE" --ks-pass pass:android \
   --ks-key-alias androiddebugkey --key-pass pass:android \

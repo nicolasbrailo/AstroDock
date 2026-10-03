@@ -218,7 +218,11 @@ yourself closes it at once.
 
 A called device rings first: for 3s it says "Incoming call from portaloft,
 will connect in 3 seconds", counting down, and beeps once a second, with the
-camera and microphone still off. The hang up button declines the call then,
+camera and microphone still off. The countdown only runs while the call can
+be seen (in front, with the focus, the screen on), and starts over each time
+it comes back into view, so a screensaver covering the call as it comes in
+(see "Waking up for a call") doesn't eat into it. The hang up button declines
+the call then,
 which sends `reject` with `declined` (the caller shows "portaloft declined
 the call"). When the countdown ends it answers, and only then starts the
 media.

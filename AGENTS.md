@@ -380,8 +380,8 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   process) takes or refuses an offer (`Calls.refusal`: off, not on the allow
   list, no camera or microphone, night, busy), wakes the device, and starts
   `CallActivity` (`:call`), which rings an incoming call for 3s with a
-  countdown (the hang up button declines it then, a `reject` with
-  `declined`), and then does the media (`CallMedia`) and nothing else: everything it sends goes through `CallSignalService` (main process,
+  countdown, counted only while the call can be seen (the hang up button
+  declines it then, a `reject` with `declined`), and then does the media (`CallMedia`) and nothing else: everything it sends goes through `CallSignalService` (main process,
   a bound service with a Messenger, see `CallIpc`), since the main process
   holds the only MQTT connection. **Nothing in `:call` may touch
   `StateReporter` or `SlideshowState`**: they'd be second copies, and a second

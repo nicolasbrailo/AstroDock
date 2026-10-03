@@ -11,6 +11,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.Message
 import android.os.Messenger
+import android.os.PowerManager
 import android.os.RemoteException
 import android.util.Log
 import android.view.View
@@ -35,7 +36,9 @@ import org.webrtc.SurfaceViewRenderer
 //
 // An incoming call rings for a few seconds first, saying who is calling and
 // counting down, and the hang up button declines it until then. After that it
-// connects by itself.
+// connects by itself. The countdown only runs while it can be seen, so the
+// warning is never cut short by whatever covered the screen as the call came
+// in.
 //
 // A call only lasts while this is in front. Leaving it, by Home or by the
 // screen being switched off, hangs up, so the camera is never on with nobody
@@ -63,8 +66,12 @@ class CallActivity : AppCompatActivity() {
     // An incoming call is ringing: the camera and microphone aren't on yet, and
     // the button declines it
     private var ringing = false
+    // The countdown is running, which it only does while the screen can be seen
+    private var counting = false
     // Seconds of ringing left
     private var ringLeft = 0
+    // Between onResume and onPause
+    private var resumed = false
     private var ringTone: ToneGenerator? = null
     // The caller's offer, for an incoming call
     private var offer: String? = null
@@ -194,12 +201,33 @@ class CallActivity : AppCompatActivity() {
             null
         }
         hangUpButton.contentDescription = getString(R.string.call_decline)
-        ring.run()
+        updateCountdown()
+    }
+
+    // Runs the countdown while the call can be seen: in front, with the focus,
+    // and the screen on. An incoming call can come up under a screensaver the
+    // device woke into, or on a screen that is still off (see CallRouter), and
+    // the Control Center can cover it. Each time it comes back into view, the
+    // countdown starts over.
+    private fun updateCountdown() {
+        if (!ringing) return
+        val visible = resumed && hasWindowFocus() && getSystemService(PowerManager::class.java)?.isInteractive != false
+        if (visible == counting) return
+        counting = visible
+        main.removeCallbacks(ring)
+        ringLeft = RING_SECONDS
+        if (visible) {
+            Log.i(TAG, "The call can be seen, counting down")
+            ring.run()
+        } else {
+            status.text = getString(R.string.call_incoming, peerName)
+        }
     }
 
     private fun stopRinging() {
         if (!ringing) return
         ringing = false
+        counting = false
         main.removeCallbacks(ring)
         ringTone?.release()
         ringTone = null
@@ -224,6 +252,19 @@ class CallActivity : AppCompatActivity() {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) hideSystemBars()
+        updateCountdown()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+        updateCountdown()
+    }
+
+    override fun onPause() {
+        resumed = false
+        updateCountdown()
+        super.onPause()
     }
 
     override fun onStart() {
