@@ -175,16 +175,17 @@
     <string name="mqtt_audio_announcements">Play audio announcements</string>
     <string name="mqtt_audio_announcements_summary">Plays the sound files the broker sends with announce_audio. When off, they are ignored.</string>
 
-    <string name="mqtt_category_calls">Calls</string>
+    <string name="calls_title">Portalcom</string>
+    <string name="calls_peers_title">Portals to call</string>
+    <string name="calls_off_note">Turn calls on to call other Portals, and to be called by them.</string>
+    <string name="calls_no_permission">Calls need the camera and the microphone.</string>
     <string name="calls_enabled">Take part in calls</string>
-    <string name="calls_enabled_summary">Other Portals with this on can call this one, and it answers by itself after ringing for 3 seconds, showing its camera and playing its microphone. Needs the camera and microphone from the System tab. Calls are refused while the night rule applies.</string>
+    <string name="calls_enabled_summary">Other Portals with this on can call this one, and it answers by itself after ringing for 3 seconds, showing its camera and playing its microphone. Needs the camera and the microphone. Calls are refused while the night rule applies.</string>
     <string name="calls_allowed">Who can call</string>
     <string name="calls_allowed_hint">Topic prefixes of the devices that may call this one, comma separated, e.g. kitchen-portal, portaloft-portal. Empty means any device on the broker, so restrict who can publish to the broker too.</string>
     <string name="calls_allowed_anyone">Any device on the broker</string>
 
-    <string name="call_button">Call another Portal</string>
-    <string name="call_pick_title">Call</string>
-    <string name="call_no_peers">No other Portal that takes calls is online. Calls have to be turned on in each one\'s MQTT tab.</string>
+    <string name="call_no_peers">No other Portal that takes calls is online. Calls have to be turned on in each one\'s Portalcom app.</string>
     <string name="call_no_broker">Calls need the MQTT broker, which isn\'t connected.</string>
     <string name="call_busy">Already in a call</string>
     <string name="call_ringing">Ringing %1$s…</string>
@@ -204,7 +205,7 @@
     <string name="call_no_connection">Can\'t reach %1$s over the network</string>
     <string name="call_no_answer">%1$s didn\'t answer</string>
     <string name="call_unreachable">Can\'t reach the MQTT broker</string>
-    <string name="call_no_permission">Calls need the camera and the microphone (System tab)</string>
+    <string name="call_no_permission">Calls need the camera and the microphone (Portalcom app)</string>
     <string name="call_rejected_disabled">%1$s doesn\'t take calls</string>
     <string name="call_rejected_not_allowed">%1$s doesn\'t take calls from this device</string>
     <string name="call_rejected_unavailable">%1$s can\'t use its camera or microphone</string>
@@ -214,7 +215,7 @@
     <string name="call_rejected_declined">%1$s declined the call</string>
 
     <string name="system_call_title">Camera and microphone</string>
-    <string name="system_call_description">For calls between Portals (MQTT tab). Only needed on a device that takes part in calls.</string>
+    <string name="system_call_description">For calls between Portals (Portalcom app). Only needed on a device that takes part in calls.</string>
     <string name="system_call_button">Allow</string>
     <string name="system_call_missing">Missing camera or microphone: calls are on, but can\'t be made or taken</string>
 

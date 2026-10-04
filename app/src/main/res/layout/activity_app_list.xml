@@ -22,18 +22,6 @@
             android:textColor="@android:color/white"
             android:textSize="28sp" />
 
-        <!-- Only while calls are on (MQTT tab) -->
-        <ImageButton
-            android:id="@+id/call_button"
-            android:layout_width="64dp"
-            android:layout_height="64dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="@string/call_button"
-            android:padding="16dp"
-            android:scaleType="fitCenter"
-            android:src="@drawable/ic_call"
-            android:visibility="gone" />
-
         <ImageButton
             android:id="@+id/settings_button"
             android:layout_width="64dp"

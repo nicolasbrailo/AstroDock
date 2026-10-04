@@ -94,7 +94,8 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   (`SeekBarPreference`), which store an int, so `load()` converts the string a
   text input would have left behind the first time it reads one.
 - `SettingsActivity.kt` + `res/layout/activity_settings.xml`: settings in
-  tabs: Slideshow, System, Apps and MQTT. The Slideshow tab is the
+  tabs: Slideshow, System, Apps and MQTT. The alarms and the calls (Portalcom) have apps
+  of their own in the app list instead (`AlarmsActivity`, `CallsActivity`). The Slideshow tab is the
   preferences in `res/xml/preferences.xml`, whose keys must match
   `Settings.KEY_*`.
 - `NightHoursPreference.kt` + `res/layout/preference_night_hours.xml`: the
@@ -401,10 +402,18 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   `StateReporter` is a second client with our client id. The activity holds
   the screen on with its window flag, and hangs up 3s after it stops being
   in front. `Calls.kt` holds the rules as pure functions, unit tested.
-  `CallSettings` is the MQTT tab's "Calls" section: whether calls are on (off
-  by default) and who may call. The app list's call button (only while calls
-  are on) lists the devices that take calls. There are no ICE servers: every
-  device is on the same network.
+  `CallSettings` is whether calls are on (off by default) and who may call,
+  edited in the Portalcom app: `CallsActivity.kt` + `res/layout/activity_calls.xml`,
+  a launcher activity of ours in the app list like the Alarms app (its own
+  icon, `res/mipmap-anydpi/ic_calls.xml`, and its own task), in the main
+  process. It has the two settings, a red line and an "Allow" button while
+  calls are on without the camera or microphone (turning calls on asks for
+  them), and, while calls are on, a button per device that takes calls,
+  looked at again every 2s while on screen. Switching calls on or off
+  applies at once (`StateReporter.applySettings`, which republishes the
+  availability record). Tapping a device places the call and closes the
+  screen, so hanging up returns to the slideshow. There are no ICE servers:
+  every device is on the same network.
 - `alarm/`: alarms that start a media app, edited in the Alarms app:
   `AlarmsActivity.kt`, a launcher activity of ours with its own label and
   icon (`res/mipmap-anydpi/ic_alarms.xml`), which `LauncherModel` lets
@@ -725,7 +734,7 @@ documents the API). Keep the two behaving the same.
 
 **App list** (`AppListActivity`).
 - It shows every activity with `ACTION_MAIN` + `CATEGORY_LAUNCHER`, except this
-  app's own (but for the Alarms app, `AlarmsActivity`), and the pinned shortcuts, sorted by label. The `<queries>` element in
+  app's own (but for the Alarms and Portalcom apps, `LauncherModel.OWN_APPS`), and the pinned shortcuts, sorted by label. The `<queries>` element in
   the manifest makes those activities visible on Android 11+. Shortcuts go in
   folders like apps (by `PinnedShortcut.key`), and their long-press menu
   removes them (unpins) or, inside a folder, takes them out of it. A folder
@@ -773,8 +782,8 @@ System tab) the night rule can't do anything, so its switch and
 hours are greyed out and the reason is shown in red; this is checked every
 time the tab is resumed, so granting it enables them. The red doesn't show on
 a Portal set up by `tools/setup-device.sh`, whose high contrast text draws
-every string black or white. The MQTT tab's "Calls" section: whether this
-device takes part in calls (default off; it then rings for 3s, when the
+every string black or white. The Portalcom app (in the app list, see `call/`):
+whether this device takes part in calls (default off; it then rings for 3s, when the
 call can be declined, and answers by itself), and who can call it, as comma separated topic prefixes (empty means
 any device on the broker, so the broker's own access control is what really
 decides). Calls are refused while the night rule applies, and while the Portal is in

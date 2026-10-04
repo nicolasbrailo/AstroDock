@@ -243,6 +243,21 @@
             </intent-filter>
         </activity>
 
+        <!-- Calls between Portals, as an app in the app list, like the
+             alarms: its settings and the Portals to call -->
+        <activity
+            android:name=".CallsActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_calls"
+            android:label="@string/calls_title"
+            android:roundIcon="@mipmap/ic_calls"
+            android:taskAffinity="${applicationId}.calls">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <activity
             android:name=".SettingsActivity"
             android:exported="false"

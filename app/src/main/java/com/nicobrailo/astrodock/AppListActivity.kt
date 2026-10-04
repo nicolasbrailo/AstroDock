@@ -15,7 +15,6 @@ import android.widget.EditText
 import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.lifecycleScope
@@ -27,9 +26,6 @@ import com.nicobrailo.astrodock.apps.FolderStore
 import com.nicobrailo.astrodock.apps.LauncherApp
 import com.nicobrailo.astrodock.apps.LauncherModel
 import com.nicobrailo.astrodock.apps.PinnedShortcut
-import com.nicobrailo.astrodock.call.CallRouter
-import com.nicobrailo.astrodock.call.CallSettings
-import com.nicobrailo.astrodock.mqtt.StateReporter
 import com.nicobrailo.astrodock.overlay.HomeButtonApps
 import com.nicobrailo.astrodock.overlay.HomeButtonService
 import kotlinx.coroutines.launch
@@ -96,7 +92,6 @@ class AppListActivity : AppCompatActivity() {
         findViewById<View>(R.id.settings_button).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        findViewById<View>(R.id.call_button).setOnClickListener { pickCall() }
 
         model = LauncherModel(this) { refresh() }
         folderStore = FolderStore(this)
@@ -121,32 +116,6 @@ class AppListActivity : AppCompatActivity() {
         // happened while the list was closed
         model.start()
         refresh()
-        // It may have been switched in the settings meanwhile
-        findViewById<View>(R.id.call_button).visibility =
-            if (CallSettings.load(this).enabled) View.VISIBLE else View.GONE
-    }
-
-    // The devices that can be called are the ones whose availability record
-    // says they take calls (see CALLING.md)
-    private fun pickCall() {
-        val router = CallRouter.get(this)
-        if (router.active) {
-            Toast.makeText(this, R.string.call_busy, Toast.LENGTH_SHORT).show()
-            return
-        }
-        val reporter = StateReporter.get(this)
-        val dialog = AlertDialog.Builder(this, R.style.Theme_AstroDock_Dialog).setTitle(R.string.call_pick_title)
-        val peers = reporter.callablePeers()
-        when {
-            reporter.ownPrefix == null -> dialog.setMessage(R.string.call_no_broker)
-            peers.isEmpty() -> dialog.setMessage(R.string.call_no_peers)
-            else -> dialog.setItems(peers.map { it.name }.toTypedArray()) { _, which ->
-                // The call has a task of its own, so the list goes, and
-                // hanging up returns to the slideshow
-                if (router.placeCall(peers[which])) finish()
-            }
-        }
-        dialog.setNegativeButton(android.R.string.cancel, null).show()
     }
 
     override fun onStop() {

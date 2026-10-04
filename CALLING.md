@@ -7,8 +7,8 @@ another app, screen off), except at night, when it refuses.
 Calls are set up over MQTT and the media goes directly between the two
 devices with WebRTC. The code is in `app/src/main/java/.../call/`.
 
-Calling is off by default. It is turned on in the MQTT tab ("Take part in
-calls"), or with `tools/push-config.sh --calls-enabled true`, which also
+Calling is off by default. It is turned on in the Portalcom app, in AstroDock's
+app list ("Take part in calls"), or with `tools/push-config.sh --calls-enabled true`, which also
 grants the camera and the microphone.
 
 ## Protocol
@@ -48,7 +48,7 @@ The callee replies `reject` without starting anything when, in this order
 (`Calls.refusal`):
 
 1. calling is off on this device (`disabled`);
-2. the caller isn't on the allow list, "Who can call" in the MQTT tab
+2. the caller isn't on the allow list, "Who can call" in the Portalcom app
    (`not_allowed`);
 3. the Portal is in privacy mode, which turns its camera and microphone off
    (`privacy`);
@@ -75,8 +75,9 @@ rings (`declined`, see "On screen").
 A device with calling on says `"calls": true` in its retained
 `<prefix>availability` record, which is published again when the setting
 changes. Every device subscribes to `+/availability` and keeps the records,
-and the app list's call button (only shown while calling is on) offers every
-device that is online, has `calls: true` and isn't itself.
+and the Portalcom app lists, while calling is on, every device that is online,
+has `calls: true` and isn't itself, looking again every 2s while it's on
+screen.
 
 Devices are named by their topic prefix (`portaloficina`), which defaults to
 the name the device was given at setup. The record's `hostname` is the
