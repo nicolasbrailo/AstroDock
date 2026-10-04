@@ -317,6 +317,15 @@ class StateReporter private constructor(private val context: Context) {
     // without telling it, such as the album filter or a call
     fun refresh() = publishState()
 
+    // Text over the pictures for the rest of the app (the alarms), shown the
+    // way an MQTT announcement is, so the two replace each other like any two
+    // announcements. Called on the main thread.
+    fun announce(message: String, timeoutSeconds: Int, owner: Any? = null) =
+        carryOut(Command.Announce(message, timeoutSeconds, owner))
+
+    fun endAnnouncement(owner: Any, afterSeconds: Int) =
+        carryOut(Command.EndAnnouncement(owner, afterSeconds))
+
     // Our prefix, which a call offer gives as where to answer, while there is
     // a connection to answer on
     val ownPrefix: String?

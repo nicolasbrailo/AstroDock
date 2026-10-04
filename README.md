@@ -10,6 +10,7 @@ A lightweight home screen and screensaver for the Facebook Portal Go.
 * **App Catalogue**: Built-in installer to download and update Portal-compatible apps.
 * **Smart Power**: Scheduled sleep/wake cycles and automated screen management.
 * **Media Controls**: "Now Playing" overlay for controlling background music and video apps.
+* **Alarms**: Wake up to a media app, e.g. a Spotify playlist on shuffle, with the device's alarm sound as a backstop if the music doesn't start.
 * **MQTT Remote**: Publishes device state (occupancy, current photo) and accepts remote commands (navigation, power, text and audio announcements).
 * **Calls between Portals**: Video calls from one Portal to another over the same MQTT broker, answered automatically. Off by default; see [CALLING.md](CALLING.md).
 

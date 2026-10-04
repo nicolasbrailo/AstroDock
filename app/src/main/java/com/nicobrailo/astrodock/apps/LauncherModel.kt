@@ -13,6 +13,7 @@ import android.os.Process
 import android.os.UserHandle
 import android.os.UserManager
 import android.util.Log
+import com.nicobrailo.astrodock.AlarmsActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -94,14 +95,18 @@ class LauncherModel(private val context: Context, private val onChanged: () -> U
     }
 
     // Every launchable app in every profile, except this launcher, sorted by
-    // name. Loading labels and icons reads each app's resources, so not on the
+    // name. The alarms are listed, being the one part of this app that is
+    // meant to look like an app of its own (AlarmsActivity). Loading labels and icons reads each app's resources, so not on the
     // main thread.
     suspend fun apps(): List<LauncherApp> = withContext(Dispatchers.IO) {
         val profiles = userManager?.userProfiles ?: listOf(Process.myUserHandle())
         profiles.flatMap { user ->
             launcherApps?.getActivityList(null, user).orEmpty().map { toApp(it, user) }
         }
-            .filterNot { it.component.packageName == context.packageName }
+            .filterNot {
+                it.component.packageName == context.packageName &&
+                    it.component.className != AlarmsActivity::class.java.name
+            }
             .sortedBy { it.label.lowercase() }
             .also { apps ->
                 val light = apps.filter { it.wantsLightStatusBar }.map { it.label }

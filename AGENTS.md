@@ -93,9 +93,10 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   ranges. Percent of each album and seconds per picture are sliders
   (`SeekBarPreference`), which store an int, so `load()` converts the string a
   text input would have left behind the first time it reads one.
-- `SettingsActivity.kt` + `res/layout/activity_settings.xml`: settings with two
-  tabs. The Slideshow tab is the preferences in `res/xml/preferences.xml`, whose
-  keys must match `Settings.KEY_*`.
+- `SettingsActivity.kt` + `res/layout/activity_settings.xml`: settings in
+  tabs: Slideshow, System, Apps and MQTT. The Slideshow tab is the
+  preferences in `res/xml/preferences.xml`, whose keys must match
+  `Settings.KEY_*`.
 - `NightHoursPreference.kt` + `res/layout/preference_night_hours.xml`: the
   night hours as one `RangeSlider` with a knob for each end. It still stores
   them as the strings `night_start_hour` and `night_end_hour` the text inputs
@@ -293,7 +294,7 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   `screen` (`on`, `since`, `screensaver`, the last of which is any
   screensaver, the Portal's too, and `wanted` plus `wanted_reason`: what the
   app wants the screen to be, `null` when it leaves it to the Portal, which is
-  most of the time. `on` for `force_on`, `install` or `call`, `off` for `force_off`
+  most of the time. `on` for `force_on`, `install`, `call` or `alarm`, `off` for `force_off`
   until the screen next comes on, or `night` while the night rule applies.
   `DeviceState.screenWish` holds the order, unit tested. Comparing it with
   `on` shows the Portal waking a screen we want off; and, from the Portal's
@@ -404,6 +405,80 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   by default) and who may call. The app list's call button (only while calls
   are on) lists the devices that take calls. There are no ICE servers: every
   device is on the same network.
+- `alarm/`: alarms that start a media app, edited in the Alarms app:
+  `AlarmsActivity.kt`, a launcher activity of ours with its own label and
+  icon (`res/mipmap-anydpi/ic_alarms.xml`), which `LauncherModel` lets
+  through into the app list while leaving out the rest of this package, and
+  whose long-press menu has no uninstall or home button, these being
+  AstroDock's. It has a task of its own (`taskAffinity`): sharing the home
+  screen's, a launcher's start only brought the home screen to the front
+  (measured on a Portal+, 2026-10-04). It holds `AlarmsFragment.kt` +
+  `res/layout/fragment_alarms.xml`, `item_alarm.xml`, `dialog_alarm.xml` and kept as JSON in their own preferences file
+  (`AlarmStore`). An `Alarm` is a time, days (none means once, after which it
+  switches itself off), an app (none means the alarm sound alone), what to
+  play (a URI and its name, empty for whatever the app played last), shuffle
+  and a media volume. What to play is picked from a list rather than typed:
+  `RecentPlaylists` notes every playlist, album, artist or show an app is seen
+  playing from, with its name, from the session's metadata (Spotify's
+  `com.spotify.music.extra.CONTEXT_URI` and `CONTEXT_TITLE`; nothing else is
+  known to say), most recent first, 30 at most. `NowPlaying` notes it on every
+  session change while a slideshow is up, and the editor as it opens, where
+  the one playing now is marked and preselected for a new alarm. So the way
+  to set an alarm to a playlist, a daily mix included, is to play it here
+  once. Only links that play when opened (`PlayRequest.playsWhenOpened`) are
+  noted, so not the liked songs, a radio or a single track. `merge` and
+  `playlist` are pure and unit tested. `AlarmSchedule` (pure, unit tested) works
+  out when each rings, in the local zone so 08:00 stays 08:00 across summer
+  time, and which alarms a wake-up was for. `AlarmReceiver` keeps one
+  `setAlarmClock` for the soonest of them, set again after it rings, on every
+  edit, on boot, on the clock or zone being set, after an update, and whenever
+  a slideshow appears (a force stop drops it).
+  `AlarmRinger` (main process) rings one: it wakes the screen with a 5 minute
+  hold (`ScreenControl`, so MQTT reports it), and since a screen that was off
+  wakes into a screensaver that only a second wake ends, it watches for
+  `DREAMING_STARTED` from before the first and wakes again while one is up;
+  an app opened under a screensaver never plays. It sets the media volume
+  to the lowest audible step and, once the music plays here, raises it to the
+  alarm's over a minute (`VolumeRamp`, pure and unit tested: a staircase, the
+  stream having 18 steps on a Portal+), stopping if anyone changes the volume
+  meanwhile; the music carries on at it afterwards. Music already playing
+  here when the alarm rings is somebody listening, so its volume is left
+  alone; if the music doesn't play here after all, the volume is put back.
+  It shows "Alarm 08:00: Spotify"
+  over the pictures (`StateReporter.announce`), and has `MediaStarter` start
+  the app. Spotify following another device over Connect (a remote session)
+  is left alone while it plays there, since somebody is listening, and the
+  alarm sound plays instead ("Spotify is playing on another device"); paused
+  there, it is told to play from here, which moves it here (`pullHere`).
+  If it isn't audibly playing on this device within 30s (remote playback
+  doesn't count, unlike in the media panel), or couldn't be started,
+  the device's alarm sound plays on the alarm stream at the device's alarm
+  volume, looped, until the slideshow is touched (`SlideshowState.noteTouch`
+  calls `AlarmRinger.silence`) or for 10 minutes, with why on screen. An
+  alarm holds the night rule off for 30 minutes (`SlideshowState.noteAlarm`),
+  like a touch does for 5, but isn't a touch, so the stuck-camera check
+  doesn't count it as somebody seen.
+  `MediaStarter` does what Spotify allows, which is less than its session
+  advertises (see the platform notes): a URI the app has an activity for is
+  opened there (`PlayRequest.viewUri`, which turns a Spotify playlist, album,
+  artist or show into its `spotify:...:play` link, the form that plays and
+  not only shows), and `AlarmRinger` presses Home once the music plays, if
+  AstroDock is the home app. Anything else goes through the app's media
+  session: an app with no session (its process gone) is first woken with a
+  Play key sent to its own media button receiver, which resumes what it
+  played last, from the start of the song (`seekTo(0)`, unless it was
+  already playing here, somebody listening). Shuffle goes through the
+  session too, with the compat
+  library's `MediaControllerCompat` (`androidx.media`), since the framework's
+  controls have no shuffle; after a link it waits for the music, because
+  Spotify sets each playlist's own shuffle as it loads it, then skips once so
+  the first track is a random one. `PlayRequest.parse` (unit tested) turns
+  what was typed into a request: empty is resume, an `open.spotify.com` link
+  becomes its `spotify:` URI, any other URI is a URI, anything else is a
+  search (which Spotify ignores); the editor only stores empty or a noted
+  URI now, but alarms from the version that took a typed link still parse. Reading sessions needs notification access;
+  without it the Alarms app says so in red, and an alarm can only wake the app
+  or open its link. `tools/push-config.sh` doesn't handle alarms.
 - `UpdateReceiver.kt`: puts things back after the app is updated
   (`MY_PACKAGE_REPLACED`), since an update from the Apps tab has no adb to
   run `tools/setup-device.sh` with. It presses Home, if AstroDock is still the
@@ -650,7 +725,7 @@ documents the API). Keep the two behaving the same.
 
 **App list** (`AppListActivity`).
 - It shows every activity with `ACTION_MAIN` + `CATEGORY_LAUNCHER`, except this
-  app, and the pinned shortcuts, sorted by label. The `<queries>` element in
+  app's own (but for the Alarms app, `AlarmsActivity`), and the pinned shortcuts, sorted by label. The `<queries>` element in
   the manifest makes those activities visible on Android 11+. Shortcuts go in
   folders like apps (by `PinnedShortcut.key`), and their long-press menu
   removes them (unpins) or, inside a folder, takes them out of it. A folder
@@ -705,9 +780,17 @@ any device on the broker, so the broker's own access control is what really
 decides). Calls are refused while the night rule applies, and while the Portal is in
 privacy mode or its lens is covered.
 
+**Alarms** (the Alarms app, in the app list): see `alarm/` above. Each alarm has a time, days
+(none: once), the app to start (the list is every app with a media button
+receiver or a play-from-search activity, plus "none, only the alarm sound"),
+what to play (whatever it played last, or a playlist it was seen playing), shuffle (default on) and
+a volume (default 30%), which the editor says the music rises to over the
+first minute. "Test" in the editor saves it, as Save does, and rings it at once; closing
+the editor stops the alarm sound, since no slideshow is there to touch.
+
 **Night screen off** (`SlideshowController.checkNight`). The night rule applies
-while the hour is inside the night window and nothing has touched the slideshow
-in the last 5 minutes. It has two halves, because the Portal's presence
+while the hour is inside the night window, nothing has touched the slideshow
+in the last 5 minutes and no alarm has rung in the last 30. It has two halves, because the Portal's presence
 detection wakes the screen about every 30s while its camera sees someone, and
 nothing an app can reach stops that:
 - **Dark**: the slideshow is covered in black (`night_cover`) with the window's
@@ -880,6 +963,30 @@ using it.
   is already running. An app's `ACQUIRE_CAUSES_WAKEUP` wake lock wakes into
   it too ("Waking up from screen off, start dreaming"), and only a second one
   ends it, which `CallRouter` does for an incoming call (measured 2026-09-30).
+- **Spotify (9.1) only does part of what its media session advertises.**
+  Measured on a Portal+, 2026-10-03, with `MediaStarter`. Its actions
+  include play-from-URI, play-from-search and shuffle, but from AstroDock it
+  ignores both play-from requests without a trace, even with its player
+  ready; play, pause, skip and shuffle work. Its `MEDIA_PLAY_FROM_SEARCH`
+  activity only shows the results. A `VIEW` of
+  `spotify:playlist:<id>:play` opens the playlist and plays it, from a dead
+  process too, but only once Spotify is resumed: started under a screensaver
+  it stays paused. With no session, a Play key to its own
+  `MediaButtonReceiver` (or the system's Play key) brings it back playing
+  what it played last, in about 2s. Shuffle set while it loads a playlist is
+  undone when the playlist starts, and on this version the shuffle button
+  only toggles (its session's "Toggle shuffle" custom action icon tells the
+  two states apart); `SHUFFLE_MODE_ALL` is the same plain shuffle the button
+  sets. Its session's metadata names the playlist being played
+  (`com.spotify.music.extra.CONTEXT_URI`, `CONTEXT_TITLE`, also
+  `CONTEXT_SHARE_URL`), and its `SpotifyMediaBrowserService`, which could
+  list the library and the daily mixes, refuses AstroDock's connection.
+  Following another device over Connect, its session is remote
+  (`volumeType=2`, Connect's own 0 to 100 volume); with that device paused for
+  a minute or two, Play through the session moved playback to the Portal: the
+  session turned local and Spotify started an `AudioTrack` here at once.
+  Measured 2026-10-04. Untested: a device paused for longer, or one that
+  isn't paused but has gone away.
 - **Neither the Portal+ nor the Portal Go has a hardware echo canceller or
   noise suppressor** for an app (WebRTC logs "HW AEC not supported"), so
   calls use WebRTC's software ones. Measured 2026-09-30.

@@ -3,6 +3,7 @@ package com.nicobrailo.astrodock
 import android.content.Context
 import android.os.SystemClock
 import android.util.Log
+import com.nicobrailo.astrodock.alarm.AlarmRinger
 import com.nicobrailo.astrodock.immich.AlbumPicture
 import com.nicobrailo.astrodock.immich.ImmichClient
 import com.nicobrailo.astrodock.immich.ImmichException
@@ -59,6 +60,18 @@ class SlideshowState private constructor() {
         lastTouchAt = SystemClock.elapsedRealtime()
         // Somebody is there, which tells whether the camera noticed
         PortalLog.noteSomebody()
+        // Touching the screen is how the alarm sound is stopped
+        AlarmRinger.silence()
+    }
+
+    // When an alarm last rang. The night rule holds off for a while after
+    // one, like after a touch, or an alarm set inside the night hours would
+    // ring under the black cover and have the screen switched off under it.
+    // Not a touch, since nobody is known to be there.
+    private var lastAlarmAt: Long? = null
+
+    fun noteAlarm() {
+        lastAlarmAt = SystemClock.elapsedRealtime()
     }
 
     // When the night rule last turned the screen off, or null if it hasn't.
@@ -76,6 +89,7 @@ class SlideshowState private constructor() {
         return s.nightScreenOff &&
             ScreenControl.isNight(LocalTime.now().hour, s.nightStartHour, s.nightEndHour) &&
             now - lastTouchAt >= NIGHT_TOUCH_GRACE_MILLIS &&
+            lastAlarmAt.let { it == null || now - it >= NIGHT_ALARM_GRACE_MILLIS } &&
             ScreenControl.canTurnScreenOff(context)
     }
 
@@ -199,6 +213,8 @@ class SlideshowState private constructor() {
         private const val METADATA_CACHE_SIZE = 60
         // How long a touch keeps the screen on during the night hours
         private const val NIGHT_TOUCH_GRACE_MILLIS = 5 * 60 * 1000L
+        // And an alarm: long enough to wake up to it
+        private const val NIGHT_ALARM_GRACE_MILLIS = 30 * 60 * 1000L
 
         // The home screen and the screensaver are in the same process, so one
         // object is all it takes to share the slideshow between them

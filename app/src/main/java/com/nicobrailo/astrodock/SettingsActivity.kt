@@ -22,8 +22,10 @@ import com.nicobrailo.astrodock.weather.WeatherException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
-// Three tabs: the slideshow settings (Settings.kt), what the app needs from the
-// system (SystemSettingsFragment), and apps to install (InstallAppsFragment).
+// The tabs: the slideshow settings (Settings.kt), what the app needs from the
+// system (SystemSettingsFragment), apps to install (InstallAppsFragment) and
+// the broker (MqttSettingsFragment). The alarms are an app of their own
+// (AlarmsActivity).
 class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

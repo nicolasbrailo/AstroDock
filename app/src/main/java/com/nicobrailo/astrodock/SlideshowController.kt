@@ -31,6 +31,7 @@ import coil3.request.SuccessResult
 import coil3.size.ViewSizeResolver
 import com.nicobrailo.astrodock.apps.LauncherModel
 import com.nicobrailo.astrodock.apps.PinnedShortcut
+import com.nicobrailo.astrodock.alarm.AlarmReceiver
 import com.nicobrailo.astrodock.immich.AlbumFilter
 import com.nicobrailo.astrodock.immich.AlbumPicture
 import com.nicobrailo.astrodock.immich.ImmichClient
@@ -228,6 +229,8 @@ class SlideshowController(
 
         // For the next update, which may put the Portal's screensaver back
         UpdateReceiver.noteScreensaver(context)
+        // A force stop drops the alarm the system had for us
+        AlarmReceiver.schedule(context)
 
         // Before anything is reported, so a screen the Portal wakes at night
         // is reported as the dark screen it is, without a moment of "active"

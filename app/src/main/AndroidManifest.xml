@@ -61,12 +61,28 @@
         android:name="android.hardware.camera"
         android:required="false" />
 
+    <!-- Alarms (alarm/AlarmReceiver.kt). The system forgets them on reboot,
+         so they are set again then. Exact alarms need no permission up to
+         Android 11; after that an alarm clock app gets USE_EXACT_ALARM. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission
+        android:name="android.permission.SCHEDULE_EXACT_ALARM"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+
     <!-- Lets AppListActivity see the apps it can launch (Android 11+ hides
          other packages otherwise) -->
     <queries>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- The media apps an alarm can start (alarm/MediaStarter.kt) -->
+        <intent>
+            <action android:name="android.intent.action.MEDIA_BUTTON" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
         </intent>
     </queries>
 
@@ -180,6 +196,19 @@
             </intent-filter>
         </receiver>
 
+        <!-- Rings the alarms, and sets the next one again whenever the system
+             may have lost it or moved it: a reboot, or the clock or the time
+             zone being set -->
+        <receiver
+            android:name=".alarm.AlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+
         <!-- A call, in a process of its own: Android takes the default home
              app away from one whose process crashes, and WebRTC is a lot of
              native code. A task of its own too, so it doesn't bring the app
@@ -196,6 +225,23 @@
         <service
             android:name=".call.CallSignalService"
             android:exported="false" />
+
+        <!-- The alarms, as an app in the app list (and in any other
+             launcher), with an icon of their own. A task of its own too:
+             sharing the home screen's, a launcher's start only brought the
+             home screen to the front (measured on a Portal+, 2026-10-04). -->
+        <activity
+            android:name=".AlarmsActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_alarms"
+            android:label="@string/alarms_title"
+            android:roundIcon="@mipmap/ic_alarms"
+            android:taskAffinity="${applicationId}.alarms">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".SettingsActivity"

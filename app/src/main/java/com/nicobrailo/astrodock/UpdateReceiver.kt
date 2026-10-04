@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Settings as AndroidSettings
 import android.util.Log
+import com.nicobrailo.astrodock.alarm.AlarmReceiver
 
 // Puts things back after this app is updated, which an update done on the
 // device itself (the Apps tab) has no adb to do.
@@ -26,6 +27,8 @@ class UpdateReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         restoreScreensaver(context)
+        // An update may or may not keep the system's alarms; asking again is free
+        AlarmReceiver.schedule(context)
         goHome(context)
     }
 

@@ -10,4 +10,5 @@
     <color name="error_text">#FFD32F2F</color>
     <color name="ok_text">#FF2E7D32</color>
     <color name="ic_launcher_background">#5D6C84</color>
+    <color name="ic_alarms_background">#D9822B</color>
 </resources>

@@ -13,6 +13,7 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState
 import android.os.SystemClock
 import android.util.Log
+import com.nicobrailo.astrodock.alarm.RecentPlaylists
 
 // What another app is playing (Jellyfin, a browser, anything with a media
 // session), so the slideshow can show it and control it while it keeps showing
@@ -25,6 +26,8 @@ class NowPlaying(private val context: Context, private val onChanged: () -> Unit
     private val sessionManager = context.getSystemService(MediaSessionManager::class.java)
     private val audioManager = context.getSystemService(AudioManager::class.java)
     private val listenerComponent = ComponentName(context, MediaListenerService::class.java)
+    // What was played from, for the alarms to offer again
+    private val playlists = RecentPlaylists(context)
 
     private var controller: MediaController? = null
     private var running = false
@@ -80,6 +83,7 @@ class NowPlaying(private val context: Context, private val onChanged: () -> Unit
         changedAt = SessionActivity.shared.observe(
             controller.packageName, snapshot, SystemClock.elapsedRealtime(), controller.updatedAt,
         )
+        playlists.note(controller)
     }
 
     val artwork: Bitmap?

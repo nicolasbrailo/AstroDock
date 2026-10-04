@@ -295,9 +295,12 @@ class AppListActivity : AppCompatActivity() {
             onChanged()
             true
         }
+        // Our own entry (the alarms) is part of this app: uninstalling it would
+        // take the home screen with it, and it needs no home button
+        val ours = app.component.packageName == this.packageName
         // System apps can't be uninstalled, and another profile's apps can only
         // be uninstalled from inside that profile
-        if (!app.isSystem && app.isOwnProfile) {
+        if (!app.isSystem && app.isOwnProfile && !ours) {
             menu.menu.add(R.string.app_menu_uninstall).setOnMenuItemClickListener {
                 val uri = Uri.parse("package:${app.component.packageName}")
                 startActivity(Intent(Intent.ACTION_DELETE, uri))
@@ -305,24 +308,26 @@ class AppListActivity : AppCompatActivity() {
                 true
             }
         }
-        val packageName = app.component.packageName
-        val hasHomeButton = homeButtonApps.shouldShow(packageName, app.wantsLightStatusBar)
-        val homeButtonText =
-            if (hasHomeButton) R.string.app_menu_home_button_off else R.string.app_menu_home_button_on
-        menu.menu.add(homeButtonText).setOnMenuItemClickListener {
-            // Without the permission the button can't be drawn, so ask for it
-            if (!hasHomeButton && !AndroidSettings.canDrawOverlays(this)) {
-                // The permission is ours, not the app's we're covering
-                startActivity(
-                    Intent(
-                        AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:${this.packageName}")
+        if (!ours) {
+            val packageName = app.component.packageName
+            val hasHomeButton = homeButtonApps.shouldShow(packageName, app.wantsLightStatusBar)
+            val homeButtonText =
+                if (hasHomeButton) R.string.app_menu_home_button_off else R.string.app_menu_home_button_on
+            menu.menu.add(homeButtonText).setOnMenuItemClickListener {
+                // Without the permission the button can't be drawn, so ask for it
+                if (!hasHomeButton && !AndroidSettings.canDrawOverlays(this)) {
+                    // The permission is ours, not the app's we're covering
+                    startActivity(
+                        Intent(
+                            AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:${this.packageName}")
+                        )
                     )
-                )
+                }
+                homeButtonApps.setShown(packageName, !hasHomeButton)
+                onChanged()
+                true
             }
-            homeButtonApps.setShown(packageName, !hasHomeButton)
-            onChanged()
-            true
         }
         if (insideFolder) {
             menu.menu.add(R.string.app_menu_remove_from_folder).setOnMenuItemClickListener {
