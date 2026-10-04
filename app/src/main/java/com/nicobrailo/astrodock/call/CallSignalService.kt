@@ -36,6 +36,7 @@ class CallSignalService : Service() {
                 }
                 CallIpc.MSG_LOCAL_SDP -> msg.data.getString(CallIpc.KEY_SDP)?.let { router.onLocalSdp(callId, it) }
                 CallIpc.MSG_CONNECTED -> router.onConnected(callId)
+                CallIpc.MSG_ANSWERING -> router.onAnswering(callId)
                 CallIpc.MSG_ENDED -> router.onEnded(callId, msg.data.getString(CallIpc.KEY_END_REASON))
             }
         }

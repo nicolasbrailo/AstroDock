@@ -33,6 +33,11 @@ class SettingsActivity : AppCompatActivity() {
         title = getString(R.string.settings_title)
 
         val pager = findViewById<ViewPager2>(R.id.pager)
+        // Tabs change on a tap only, and at once. ViewPager2's swipe took
+        // half a second to settle after the finger lifted on a Portal, its
+        // duration isn't something the library lets us set, and the
+        // Slideshow tab's sliders are dragged sideways too.
+        pager.isUserInputEnabled = false
         pager.adapter = object : FragmentStateAdapter(this) {
             override fun getItemCount() = TABS.size
 
@@ -43,7 +48,7 @@ class SettingsActivity : AppCompatActivity() {
                 else -> MqttSettingsFragment()
             }
         }
-        TabLayoutMediator(findViewById<TabLayout>(R.id.tabs), pager) { tab, position ->
+        TabLayoutMediator(findViewById<TabLayout>(R.id.tabs), pager, true, false) { tab, position ->
             tab.text = getString(TABS[position])
         }.attach()
     }

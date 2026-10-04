@@ -37,7 +37,8 @@ class CallRouter private constructor(private val context: Context) {
         val peer: String,
         val outgoing: Boolean,
         var phase: CallPhase,
-        // The other side answered our offer
+        // The answer is on its way: the other side answered our offer, or we
+        // answered theirs
         var answered: Boolean = false,
         // Wall clock, in seconds, for the state report
         val since: Long = System.currentTimeMillis() / 1000,
@@ -70,13 +71,26 @@ class CallRouter private constructor(private val context: Context) {
     }
 
     // A call that hasn't connected by now isn't going to: the other device is
-    // gone, or its side failed to start
+    // gone, or its side failed to start. Timed in steps (see CALLING.md): for
+    // the caller, until the callee says it's ringing, then for as long as it
+    // may ring, then from its answer; for the callee, from its answer, the
+    // ringing being timed by noAnswer instead.
     private val giveUp = Runnable {
         val current = call ?: return@Runnable
         if (current.phase == CallPhase.IN_CALL) return@Runnable
         Log.i(TAG, "Call ${current.id} didn't connect, giving up")
         val reason = if (current.outgoing && !current.answered) CallIpc.END_NO_ANSWER else CallIpc.END_NO_CONNECTION
         end(reason, notifyPeer = true)
+    }
+
+    // An incoming call rang for as long as it may, and nobody answered it
+    private val noAnswer = Runnable {
+        val current = call ?: return@Runnable
+        if (current.outgoing || current.answered) return@Runnable
+        Log.i(TAG, "Nobody answered the call from ${current.peer}")
+        val reason = RejectReason.NO_ANSWER.wire
+        reporter.sendCall(current.peer, CallVerb.REJECT, JSONObject().put("call_id", current.id).put("reason", reason))
+        end(reason, notifyPeer = false)
     }
 
     // Whether a call is under way, which holds the screen on
@@ -97,7 +111,8 @@ class CallRouter private constructor(private val context: Context) {
         val id = UUID.randomUUID().toString()
         Log.i(TAG, "Calling ${peer.prefix} ($id)")
         call = Call(id, peer.prefix, outgoing = true, phase = CallPhase.OUTGOING)
-        startSession(id, peer.name, offer = null)
+        startSession(id, peer.name, offer = null, answerAfterSeconds = null)
+        restartGiveUp(SETUP_TIMEOUT_MILLIS)
         return true
     }
 
@@ -108,7 +123,20 @@ class CallRouter private constructor(private val context: Context) {
                 val current = matching(signal) ?: return
                 if (!current.outgoing || current.phase != CallPhase.OUTGOING) return
                 current.answered = true
+                // From here it's up to the network
+                restartGiveUp(SETUP_TIMEOUT_MILLIS)
                 send(CallIpc.MSG_REMOTE_ANSWER, CallIpc.KEY_SDP, signal.sdp)
+            }
+            // A callee from before there was a ringing never sends one, and
+            // answers within the setup timeout by itself
+            CallVerb.RINGING -> {
+                val current = matching(signal) ?: return
+                if (!current.outgoing || current.answered || current.phase != CallPhase.OUTGOING) return
+                Log.i(TAG, "${current.peer} is ringing")
+                // Waits for a person now, for as long as the callee rings, and
+                // a little more so that its no_answer gets here first
+                restartGiveUp(Calls.RING_TIMEOUT_SECONDS * 1000 + RING_GRACE_MILLIS)
+                send(CallIpc.MSG_REMOTE_RINGING, CallIpc.KEY_CALL_ID, current.id)
             }
             CallVerb.REJECT -> {
                 val current = matching(signal) ?: return
@@ -157,13 +185,14 @@ class CallRouter private constructor(private val context: Context) {
         wakeLock = ScreenControl.keepScreenOn(context, SCREEN_REASON, WAKE_MILLIS, wakeUp = true)
         rewakes = 0
         main.postDelayed(rewake, REWAKE_MILLIS)
-        startSession(offer.callId, Calls.displayName(from), sdp)
+        main.postDelayed(noAnswer, Calls.RING_TIMEOUT_SECONDS * 1000)
+        startSession(offer.callId, Calls.displayName(from), sdp, settings.answerAfterSeconds)
     }
 
-    private fun startSession(id: String, peerName: String, offer: String?) {
+    // answerAfterSeconds is for an incoming call: how long it rings before
+    // answering by itself, null for until someone answers it
+    private fun startSession(id: String, peerName: String, offer: String?, answerAfterSeconds: Int?) {
         session = null
-        main.removeCallbacks(giveUp)
-        main.postDelayed(giveUp, SETUP_TIMEOUT_MILLIS)
         reporter.refresh()
         // Started from the background, which Android 10 allows because we
         // hold SYSTEM_ALERT_WINDOW (the home button overlay's permission)
@@ -172,7 +201,13 @@ class CallRouter private constructor(private val context: Context) {
             .putExtra(CallActivity.EXTRA_CALL_ID, id)
             .putExtra(CallActivity.EXTRA_PEER_NAME, peerName)
             .putExtra(CallActivity.EXTRA_OFFER, offer)
+            .putExtra(CallActivity.EXTRA_ANSWER_AFTER, answerAfterSeconds ?: CallActivity.ANSWER_BY_HAND)
         context.startActivity(intent)
+    }
+
+    private fun restartGiveUp(millis: Long) {
+        main.removeCallbacks(giveUp)
+        main.postDelayed(giveUp, millis)
     }
 
     // From CallSignalService, when CallActivity is up
@@ -183,6 +218,22 @@ class CallRouter private constructor(private val context: Context) {
             return
         }
         session = messenger
+        // The call is in front of whoever is there now, which is what the
+        // caller is waiting for
+        val current = call ?: return
+        if (!current.outgoing && !current.answered) {
+            reporter.sendCall(current.peer, CallVerb.RINGING, JSONObject().put("call_id", current.id))
+        }
+    }
+
+    // Answered, by hand or by itself: it no longer rings, and has as long to
+    // gather its candidates and connect as the caller has once the answer
+    // gets there
+    fun onAnswering(callId: String) {
+        val current = call?.takeIf { it.id == callId && !it.outgoing } ?: return
+        current.answered = true
+        main.removeCallbacks(noAnswer)
+        restartGiveUp(SETUP_TIMEOUT_MILLIS)
     }
 
     // Our offer or answer, with all its candidates, ready to go
@@ -248,6 +299,7 @@ class CallRouter private constructor(private val context: Context) {
         val current = call ?: return
         call = null
         main.removeCallbacks(giveUp)
+        main.removeCallbacks(noAnswer)
         main.removeCallbacks(rewake)
         releaseWakeLock()
         if (notifyPeer) {
@@ -288,12 +340,15 @@ class CallRouter private constructor(private val context: Context) {
         private const val TAG = "CallRouter"
         // What the state record gives as the reason the screen is held on
         const val SCREEN_REASON = "call"
-        // Long enough for the :call process to start, the camera to open and
-        // the other side to answer, which is a few seconds on a Portal
+        // Long enough for the :call process to start and the other side to
+        // say it's ringing, and, once answered, for the media to connect,
+        // each of which is a few seconds on a Portal
         private const val SETUP_TIMEOUT_MILLIS = 30_000L
+        // How much longer than the callee's ringing the caller waits
+        private const val RING_GRACE_MILLIS = 10_000L
         // Holds the screen on until the call's window does; released as soon
         // as the call connects or ends
-        private const val WAKE_MILLIS = SETUP_TIMEOUT_MILLIS + 5_000L
+        private const val WAKE_MILLIS = Calls.RING_TIMEOUT_SECONDS * 1000 + SETUP_TIMEOUT_MILLIS + 5_000L
         // How often, and how many times, to wake again while a screensaver
         // covers a call that is setting up
         private const val REWAKE_MILLIS = 1_000L

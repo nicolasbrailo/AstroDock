@@ -16,22 +16,28 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.preference.PreferenceManager
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.android.material.slider.Slider
 import com.google.android.material.switchmaterial.SwitchMaterial
 import com.nicobrailo.astrodock.call.CallPeer
 import com.nicobrailo.astrodock.call.CallRouter
 import com.nicobrailo.astrodock.call.CallSettings
+import com.nicobrailo.astrodock.call.Calls
 import com.nicobrailo.astrodock.mqtt.StateReporter
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 // Calls between Portals (CALLING.md), as an app of their own in the app list,
-// like the alarms: whether this device takes part and who may call it, then
-// the Portals it can call. Runs in the main process, which holds the MQTT
+// like the alarms: whether this device takes part, whether it answers by
+// itself and who may call it, then the Portals it can call. Runs in the main process, which holds the MQTT
 // connection that knows the other devices; the call itself is CallActivity,
 // in a process of its own.
 class CallsActivity : AppCompatActivity() {
     private lateinit var enabled: SwitchMaterial
     private lateinit var permission: View
+    private lateinit var autoAnswer: SwitchMaterial
+    private lateinit var delayTitle: TextView
+    private lateinit var delayValue: TextView
+    private lateinit var delay: Slider
     private lateinit var allowed: TextView
     private lateinit var peersNote: TextView
     private lateinit var peersList: LinearLayout
@@ -47,6 +53,12 @@ class CallsActivity : AppCompatActivity() {
         title = getString(R.string.calls_title)
         enabled = findViewById(R.id.enabled)
         permission = findViewById(R.id.permission)
+        autoAnswer = findViewById(R.id.auto_answer)
+        delayTitle = findViewById(R.id.auto_answer_delay_title)
+        delayValue = findViewById(R.id.auto_answer_delay_value)
+        delay = findViewById(R.id.auto_answer_delay)
+        delay.valueTo = Calls.AUTO_ANSWER_MAX_SECONDS.toFloat()
+        delay.setLabelFormatter { delayText(it.toInt()) }
         allowed = findViewById(R.id.allowed)
         peersNote = findViewById(R.id.peers_note)
         peersList = findViewById(R.id.peers)
@@ -59,6 +71,16 @@ class CallsActivity : AppCompatActivity() {
             StateReporter.get(this).applySettings()
             if (on && !CallSettings.canCapture(this)) permissionDialog.launch(CallSettings.PERMISSIONS)
             refresh()
+        }
+        // Read by CallRouter as each call comes in, so nothing else needs
+        // telling
+        autoAnswer.setOnCheckedChangeListener { _, on ->
+            prefs().edit().putBoolean(CallSettings.KEY_AUTO_ANSWER, on).apply()
+            showDelay(CallSettings.load(this))
+        }
+        delay.addOnChangeListener { _, value, fromUser ->
+            delayValue.text = delayText(value.toInt())
+            if (fromUser) prefs().edit().putInt(CallSettings.KEY_AUTO_ANSWER_SECONDS, value.toInt()).apply()
         }
         findViewById<Button>(R.id.allow).setOnClickListener { permissionDialog.launch(CallSettings.PERMISSIONS) }
         findViewById<View>(R.id.allowed_row).setOnClickListener { editAllowed() }
@@ -87,11 +109,24 @@ class CallsActivity : AppCompatActivity() {
         enabled.isChecked = settings.enabled
         permission.visibility =
             if (settings.enabled && !CallSettings.canCapture(this)) View.VISIBLE else View.GONE
+        autoAnswer.isChecked = settings.autoAnswer
+        showDelay(settings)
         allowed.text = prefs().getString(CallSettings.KEY_ALLOWED, null)?.takeIf { it.isNotBlank() }
             ?: getString(R.string.calls_allowed_anyone)
         shown = null
         showPeers()
     }
+
+    private fun showDelay(settings: CallSettings) {
+        delay.value = settings.autoAnswerSeconds.toFloat()
+        delayValue.text = delayText(settings.autoAnswerSeconds)
+        delay.isEnabled = settings.autoAnswer
+        delayTitle.isEnabled = settings.autoAnswer
+        delayValue.isEnabled = settings.autoAnswer
+    }
+
+    private fun delayText(seconds: Int): String =
+        resources.getQuantityString(R.plurals.calls_auto_answer_seconds, seconds, seconds)
 
     // The devices whose availability record says they take calls
     private fun showPeers() {

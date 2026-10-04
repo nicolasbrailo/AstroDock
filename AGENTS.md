@@ -25,7 +25,8 @@ it up to date when the design changes.
   `--weather` and `--weather-place`, and the broker's
   `--mqtt-enabled`, `--mqtt-host`, `--mqtt-port` and `--mqtt-audio-announce`,
   and the calls' `--calls-enabled`, which also grants or revokes the camera
-  and the microphone, and `--calls-allowed`;
+  and the microphone, `--calls-allowed`, `--calls-auto-answer` and
+  `--calls-auto-answer-seconds`;
   `--show` prints what the
   device has, `--help` lists them all). It reads the preferences file off the
   device and only replaces the settings it was given, so the rest are left
@@ -94,7 +95,8 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   (`SeekBarPreference`), which store an int, so `load()` converts the string a
   text input would have left behind the first time it reads one.
 - `SettingsActivity.kt` + `res/layout/activity_settings.xml`: settings in
-  tabs: Slideshow, System, Apps and MQTT. The alarms and the calls (Portalcom) have apps
+  tabs: Slideshow, System, Apps and MQTT, changed by tapping only (swiping is off:
+  ViewPager2 took half a second to settle, and the sliders drag sideways). The alarms and the calls (Portalcom) have apps
   of their own in the app list instead (`AlarmsActivity`, `CallsActivity`). The Slideshow tab is the
   preferences in `res/xml/preferences.xml`, whose keys must match
   `Settings.KEY_*`.
@@ -248,7 +250,7 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   (`set_svg_overlay`, `set_render_config`, `set_embed_qr`, `set_target_size`)
   are logged and dropped. Retained commands are ignored: they arrive again on
   every reconnect, and acting on them would replay an old command.
-  The `cmd/call/*` commands (`offer`, `answer`, `reject`, `hangup`) go to
+  The `cmd/call/*` commands (`offer`, `ringing`, `answer`, `reject`, `hangup`) go to
   `CallRouter` (see `call/` below). They are the only ones sent at QoS 1, so
   `cmd/#` is subscribed at 1; the reporter also sends them to other devices
   (`sendCall`), and subscribes to `+/availability` to keep every device's
@@ -393,20 +395,27 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   process) takes or refuses an offer (`Calls.refusal`: off, not on the allow
   list, privacy mode, no camera or microphone or the lens covered, night,
   busy; the Portal's two from `PortalLog`), wakes the device, and starts
-  `CallActivity` (`:call`), which rings an incoming call for 3s with a
+  `CallActivity` (`:call`), which rings an incoming call (the router sends
+  the caller `ringing` once it's up) until someone taps Answer, or, when
+  answering by itself, for the delay set in the Portalcom app with a
   countdown, counted only while the call can be seen (the hang up button
-  declines it then, a `reject` with `declined`), and then does the media (`CallMedia`) and nothing else: everything it sends goes through `CallSignalService` (main process,
+  declines it then, a `reject` with `declined`; 45s unanswered is a
+  `reject` with `no_answer`). The router reads that setting and hands it
+  over in the intent, since `:call` would read a stale copy of the
+  preferences. Then it does the media (`CallMedia`) and nothing else: everything it sends goes through `CallSignalService` (main process,
   a bound service with a Messenger, see `CallIpc`), since the main process
   holds the only MQTT connection. **Nothing in `:call` may touch
   `StateReporter` or `SlideshowState`**: they'd be second copies, and a second
   `StateReporter` is a second client with our client id. The activity holds
   the screen on with its window flag, and hangs up 3s after it stops being
   in front. `Calls.kt` holds the rules as pure functions, unit tested.
-  `CallSettings` is whether calls are on (off by default) and who may call,
-  edited in the Portalcom app: `CallsActivity.kt` + `res/layout/activity_calls.xml`,
+  `CallSettings` is whether calls are on (off by default), who may call,
+  and whether to answer by itself and after how long (on, 3s), edited in
+  the Portalcom app: `CallsActivity.kt` + `res/layout/activity_calls.xml`,
   a launcher activity of ours in the app list like the Alarms app (its own
-  icon, `res/mipmap-anydpi/ic_calls.xml`, and its own task), in the main
-  process. It has the two settings, a red line and an "Allow" button while
+  icon, `res/mipmap-*/ic_calls.png`, made from `portalcom.webp`, and its own task), in the main
+  process. It has those settings (the delay a 0 to 10s slider, greyed out while
+  answering by itself is off), a red line and an "Allow" button while
   calls are on without the camera or microphone (turning calls on asks for
   them), and, while calls are on, a button per device that takes calls,
   looked at again every 2s while on screen. Switching calls on or off
@@ -416,7 +425,7 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   every device is on the same network.
 - `alarm/`: alarms that start a media app, edited in the Alarms app:
   `AlarmsActivity.kt`, a launcher activity of ours with its own label and
-  icon (`res/mipmap-anydpi/ic_alarms.xml`), which `LauncherModel` lets
+  icon (`res/mipmap-*/ic_alarms.png`, made from `alarm.webp`), which `LauncherModel` lets
   through into the app list while leaving out the rest of this package, and
   whose long-press menu has no uninstall or home button, these being
   AstroDock's. It has a task of its own (`taskAffinity`): sharing the home
@@ -783,8 +792,10 @@ hours are greyed out and the reason is shown in red; this is checked every
 time the tab is resumed, so granting it enables them. The red doesn't show on
 a Portal set up by `tools/setup-device.sh`, whose high contrast text draws
 every string black or white. The Portalcom app (in the app list, see `call/`):
-whether this device takes part in calls (default off; it then rings for 3s, when the
-call can be declined, and answers by itself), and who can call it, as comma separated topic prefixes (empty means
+whether this device takes part in calls (default off), whether it answers
+by itself (default on) and after ringing how long (0 to 10s, default 3s; the
+call can be declined or answered at once meanwhile), else it rings until
+someone answers, for up to 45s, and who can call it, as comma separated topic prefixes (empty means
 any device on the broker, so the broker's own access control is what really
 decides). Calls are refused while the night rule applies, and while the Portal is in
 privacy mode or its lens is covered.

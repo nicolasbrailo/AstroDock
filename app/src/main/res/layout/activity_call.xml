@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- A call (call/CallActivity.kt): the other device full screen, ours in a
-     corner over it, what is going on at the top, and the hang up button -->
+     corner over it, what is going on at the top, and the hang up button, with the answer
+     button beside it while a call rings -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -33,15 +34,34 @@
         android:textColor="@android:color/white"
         android:textSize="28sp" />
 
-    <ImageButton
-        android:id="@+id/call_hang_up"
-        android:layout_width="88dp"
-        android:layout_height="88dp"
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_gravity="bottom|center_horizontal"
         android:layout_marginBottom="32dp"
-        android:background="@drawable/hang_up_background"
-        android:contentDescription="@string/call_hang_up"
-        android:padding="20dp"
-        android:scaleType="fitCenter"
-        android:src="@drawable/ic_call_end" />
+        android:orientation="horizontal">
+
+        <!-- Only while an incoming call rings -->
+        <ImageButton
+            android:id="@+id/call_answer"
+            android:layout_width="88dp"
+            android:layout_height="88dp"
+            android:layout_marginEnd="96dp"
+            android:background="@drawable/answer_background"
+            android:contentDescription="@string/call_answer"
+            android:padding="20dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_call"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/call_hang_up"
+            android:layout_width="88dp"
+            android:layout_height="88dp"
+            android:background="@drawable/hang_up_background"
+            android:contentDescription="@string/call_hang_up"
+            android:padding="20dp"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_call_end" />
+    </LinearLayout>
 </FrameLayout>

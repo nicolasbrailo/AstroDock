@@ -34,7 +34,7 @@ sealed interface Command {
     // A message from another device about a call. Every one has the call's
     // id; an offer also has who is calling (`from`, their prefix), when
     // (`sentAt`, seconds) and `sdp`, an answer has `sdp`, and a rejection
-    // `reason`, as may a hangup.
+    // `reason`, as may a hangup. A ringing has nothing else.
     data class CallSignal(
         val verb: CallVerb,
         val callId: String,
@@ -60,6 +60,7 @@ enum class CommandKind {
     CALL_ANSWER,
     CALL_REJECT,
     CALL_HANGUP,
+    CALL_RINGING,
 }
 
 object Commands {
@@ -81,6 +82,7 @@ object Commands {
             "cmd/call/answer" -> CommandKind.CALL_ANSWER
             "cmd/call/reject" -> CommandKind.CALL_REJECT
             "cmd/call/hangup" -> CommandKind.CALL_HANGUP
+            "cmd/call/ringing" -> CommandKind.CALL_RINGING
             else -> null
         }
     }

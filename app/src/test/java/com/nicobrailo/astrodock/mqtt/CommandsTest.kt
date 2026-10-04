@@ -34,6 +34,7 @@ class CommandsTest {
         assertEquals(CommandKind.CALL_ANSWER, Commands.kind("${prefix}cmd/call/answer", prefix))
         assertEquals(CommandKind.CALL_REJECT, Commands.kind("${prefix}cmd/call/reject", prefix))
         assertEquals(CommandKind.CALL_HANGUP, Commands.kind("${prefix}cmd/call/hangup", prefix))
+        assertEquals(CommandKind.CALL_RINGING, Commands.kind("${prefix}cmd/call/ringing", prefix))
         // Another device's call messages aren't ours to act on
         assertNull(Commands.kind("kitchen/cmd/call/offer", prefix))
     }

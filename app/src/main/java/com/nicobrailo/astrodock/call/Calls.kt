@@ -14,6 +14,9 @@ enum class CallVerb(val topic: String) {
     ANSWER("answer"),
     REJECT("reject"),
     HANGUP("hangup"),
+    // The callee took the offer and is ringing: until it answers, the caller
+    // waits for a person rather than for a device (see Calls.RING_TIMEOUT_SECONDS)
+    RINGING("ringing"),
 }
 
 // Why a call wasn't taken, as sent in cmd/call/reject, so the caller can say so
@@ -32,7 +35,9 @@ enum class RejectReason(val wire: String) {
     // The callee is in another call
     BUSY("busy"),
     // Someone at the callee turned the call down while it rang
-    DECLINED("declined");
+    DECLINED("declined"),
+    // The callee rang for RING_TIMEOUT_SECONDS and nobody answered
+    NO_ANSWER("no_answer");
 
     companion object {
         fun ofWire(wire: String): RejectReason? = entries.firstOrNull { it.wire == wire }
@@ -65,6 +70,20 @@ object Calls {
     // a call nobody is making any more. The devices' clocks are set over the
     // network, so they agree to well within this.
     const val OFFER_MAX_AGE_SECONDS = 15L
+
+    // How long a callee rings before giving up with RejectReason.NO_ANSWER.
+    // The caller waits that long, and a little more, once told it's ringing.
+    const val RING_TIMEOUT_SECONDS = 45L
+
+    // The range of the auto answer delay, in seconds
+    const val AUTO_ANSWER_MAX_SECONDS = 10
+    const val AUTO_ANSWER_DEFAULT_SECONDS = 3
+
+    // How long an incoming call rings before it answers by itself, or null
+    // if only a person can answer it. A delay out of range (pushed over adb,
+    // say) is brought into it.
+    fun answerAfterSeconds(autoAnswer: Boolean, delaySeconds: Int): Int? =
+        if (autoAnswer) delaySeconds.coerceIn(0, AUTO_ANSWER_MAX_SECONDS) else null
 
     // What a device is called on screen: its topic prefix, which is the name
     // it was given at setup, made fit for a topic. The availability record's

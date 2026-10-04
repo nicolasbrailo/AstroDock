@@ -14,7 +14,9 @@ Portal sends back.
   uv run tools/fake-call-peer.py --broker 10.0.0.10:1883 listen
       Advertises itself as a device that takes calls ("Test peer", under
       --prefix, testpeer/ by default), answers whatever calls it, and hangs up
-      after --call-seconds. --reject REASON refuses them instead.
+      after --call-seconds. --reject REASON refuses them instead, and
+      --ring-seconds rings that long before answering (0 by default; past 45s
+      it gives up with no_answer, as a Portal would).
 
 Its availability record is cleared again when it exits normally.
 """
@@ -32,6 +34,8 @@ from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 from aiortc.mediastreams import AudioStreamTrack
 
 ME = "testpeer/"
+# How long a callee rings before giving up (Calls.RING_TIMEOUT_SECONDS)
+RING_TIMEOUT = 45
 
 
 def log(*a):
@@ -128,10 +132,16 @@ async def call(args):
     call_id = str(uuid.uuid4())
     sdp = "garbage" if args.sdp_garbage else pc.localDescription.sdp
     peer.send(args.target, "offer", {"call_id": call_id, "from": ME, "ts": int(time.time()) + args.ts_offset, "sdp": sdp})
+    timeout = args.answer_timeout
     try:
         while True:
-            verb, data = await peer.next_message(args.answer_timeout)
+            verb, data = await peer.next_message(timeout)
             if data.get("call_id") != call_id:
+                continue
+            if verb == "ringing":
+                # From here a person answers, so it may take a while
+                log("ringing")
+                timeout = args.ring_timeout
                 continue
             if verb == "answer":
                 await pc.setRemoteDescription(RTCSessionDescription(data["sdp"], "answer"))
@@ -173,6 +183,12 @@ async def listen(args):
             if args.reject:
                 peer.send(caller, "reject", {"call_id": call_id, "reason": args.reject})
                 continue
+            peer.send(caller, "ringing", {"call_id": call_id})
+            if args.ring_seconds > RING_TIMEOUT:
+                await asyncio.sleep(RING_TIMEOUT)
+                peer.send(caller, "reject", {"call_id": call_id, "reason": "no_answer"})
+                continue
+            await asyncio.sleep(args.ring_seconds)
             peer.send(caller, "answer", {"call_id": call_id, "sdp": pc.localDescription.sdp})
             hung_up = await peer.hold(args.call_seconds, call_id)
             log("final frames", peer.frames)
@@ -194,6 +210,7 @@ def main():
     c.add_argument("target")
     c.add_argument("--seconds", type=float, default=20)
     c.add_argument("--answer-timeout", type=float, default=30)
+    c.add_argument("--ring-timeout", type=float, default=RING_TIMEOUT + 10)
     c.add_argument("--no-hangup", action="store_true")
     c.add_argument("--sdp-garbage", action="store_true")
     c.add_argument("--ts-offset", type=int, default=0)
@@ -201,6 +218,7 @@ def main():
     l.add_argument("--seconds", type=float, default=120)
     l.add_argument("--call-seconds", type=float, default=20)
     l.add_argument("--reject", default=None)
+    l.add_argument("--ring-seconds", type=float, default=0)
     args = parser.parse_args()
     BROKER = args.broker
     ME = args.prefix if args.prefix.endswith("/") else args.prefix + "/"

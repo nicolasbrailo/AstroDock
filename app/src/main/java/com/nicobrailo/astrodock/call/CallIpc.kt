@@ -18,8 +18,14 @@ object CallIpc {
     // so the other side can say so rather than that we hung up, or
     // RejectReason.DECLINED's wire name if it was turned down while it rang.
     const val MSG_ENDED = 4
+    // An incoming call was answered, by hand or by itself, so it no longer
+    // rings; the answer itself follows as MSG_LOCAL_SDP once it has its
+    // candidates, which can take seconds
+    const val MSG_ANSWERING = 5
 
     // Service to activity
+    // The other side took our offer and is ringing
+    const val MSG_REMOTE_RINGING = 100
     // The other side's answer: KEY_SDP
     const val MSG_REMOTE_ANSWER = 101
     // The call is over, and why: KEY_END_REASON

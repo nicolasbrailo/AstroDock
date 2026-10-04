@@ -26,6 +26,16 @@ class CallsTest {
     }
 
     @Test
+    fun answersAfterTheDelayOnlyWhenAnsweringByItself() {
+        assertEquals(3, Calls.answerAfterSeconds(autoAnswer = true, delaySeconds = 3))
+        assertEquals(0, Calls.answerAfterSeconds(autoAnswer = true, delaySeconds = 0))
+        assertNull(Calls.answerAfterSeconds(autoAnswer = false, delaySeconds = 3))
+        // Out of range, as push-config.sh could leave it
+        assertEquals(10, Calls.answerAfterSeconds(autoAnswer = true, delaySeconds = 60))
+        assertEquals(0, Calls.answerAfterSeconds(autoAnswer = true, delaySeconds = -1))
+    }
+
+    @Test
     fun takesAnOfferWhenNothingStandsInTheWay() {
         assertNull(Calls.refusal(enabled = true, allowed = true, canCapture = true, night = false, busy = false))
     }

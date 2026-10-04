@@ -1,15 +1,18 @@
 # Calling between Portals
 
 Any Portal running AstroDock can video call any other one on the same MQTT
-broker. The callee rings for 3 seconds, which is the chance to decline, and
-then answers by itself, whatever it was doing (slideshow, screensaver,
-another app, screen off), except at night, when it refuses.
+broker. The callee rings, whatever it was doing (slideshow, screensaver,
+another app, screen off), except at night, when it refuses. By default it
+answers by itself after 3 seconds, which is the chance to decline; the
+Portalcom app sets that delay (0 to 10s), or turns answering by itself off,
+and the call then rings until someone taps Answer, for up to 45 seconds.
 Calls are set up over MQTT and the media goes directly between the two
 devices with WebRTC. The code is in `app/src/main/java/.../call/`.
 
 Calling is off by default. It is turned on in the Portalcom app, in AstroDock's
 app list ("Take part in calls"), or with `tools/push-config.sh --calls-enabled true`, which also
-grants the camera and the microphone.
+grants the camera and the microphone. `--calls-auto-answer` and
+`--calls-auto-answer-seconds` set the answering.
 
 ## Protocol
 
@@ -22,13 +25,33 @@ under the same `cmd/` convention as the other commands:
 | Topic (at the recipient) | Sent by | Payload |
 |---|---|---|
 | `cmd/call/offer` | caller | `{"call_id":"<uuid>","from":"<caller prefix>","ts":<epoch s>,"sdp":"v=0..."}` |
+| `cmd/call/ringing` | callee | `{"call_id":"<uuid>"}` |
 | `cmd/call/answer` | callee | `{"call_id":"<uuid>","sdp":"v=0..."}` |
-| `cmd/call/reject` | callee | `{"call_id":"<uuid>","reason":"disabled"\|"not_allowed"\|"privacy"\|"unavailable"\|"night"\|"busy"\|"declined"}` |
+| `cmd/call/reject` | callee | `{"call_id":"<uuid>","reason":"disabled"\|"not_allowed"\|"privacy"\|"unavailable"\|"night"\|"busy"\|"declined"\|"no_answer"}` |
 | `cmd/call/hangup` | either | `{"call_id":"<uuid>"}`, plus `"reason":"no_connection"` if the media never got through |
 
-- There is no `ring`: the offer is the ring. The callee rings for 3s on its
-  own and then answers, or sends `reject` with `declined` if someone turned
-  the call down meanwhile. The caller's 30s timeout covers the wait.
+- The offer is what makes the callee ring. Once its call screen is up
+  (`CallActivity` attached to the main process) it sends `ringing`, which
+  tells the caller two things: the callee is there, and from now on the wait
+  is for a person rather than for a device. It then answers (by itself after
+  its delay, or when someone taps Answer), or sends `reject` with `declined`
+  if someone turned the call down, or with `no_answer` after ringing for 45s
+  (`Calls.RING_TIMEOUT_SECONDS`). The callee only creates its answer, and so
+  only turns on its camera and microphone, once it answers.
+- Timeouts, so that waiting for a person doesn't eat into the time the media
+  has to connect (`CallRouter.giveUp`): the caller gives up 30s after the
+  offer if nothing came back ("didn't answer": offline, or its `:call`
+  crashed starting); after `ringing`, 55s after that (the callee's 45s plus
+  a margin, so its `no_answer` arrives first); and after `answer`, 30s for
+  the media to connect. The callee times its ringing (45s), and then gives
+  the media 30s from its answer.
+- Older versions answered by themselves after 3s and had no `ringing`. A
+  caller from before it ignores `ringing` (an unknown command) and keeps its
+  single 30s timeout, so a call to a device that waits for someone to answer
+  only rings for about 30s; one answered after that fails. A caller that
+  never gets `ringing` keeps waiting 30s for the answer, which an older
+  callee sends in time. An older caller shows a `no_answer` reject as
+  "didn't answer", by luck of the names.
 - `from` is where replies go, so the callee needs no directory to answer. It
   must be a prefix that can be published to (no `+` or `#`).
 - `call_id` is on every message, and one that doesn't match the current call
@@ -68,7 +91,8 @@ Two devices calling each other at once are each busy, so each rejects the
 other.
 
 An offer that passes all of these can still be turned down by hand while it
-rings (`declined`, see "On screen").
+rings (`declined`), or rung out with nobody answering (`no_answer`, see "On
+screen").
 
 ### Who can be called
 
@@ -175,7 +199,8 @@ kicks ours off the broker.
 For an offer it takes, `CallRouter`:
 
 1. wakes the device with a `SCREEN_BRIGHT_WAKE_LOCK | ACQUIRE_CAUSES_WAKEUP`,
-   held until the call connects or ends. Waking ends a running screensaver
+   held until the call connects or ends (at most the ringing and the setup,
+   plus 5s). Waking ends a running screensaver
    (ours or the Portal's) as well as switching the screen on, and an activity
    started under a screensaver stays hidden behind it;
 2. starts `CallActivity` with the offer, which it can do from the background
@@ -197,11 +222,12 @@ nobody can see that it is. Not at once, because of the screensaver above.
 
 ### Failures
 
-- **No connection within 30s** of the call starting, on either side: the
-  call is given up on and the other side is sent a `hangup`. The caller shows
-  "didn't answer" if no answer came, which covers a callee that is offline or
-  whose `:call` crashed while starting, and "Can't reach portaloft over the
-  network" if one did but the media never got through: the two devices
+- **No connection in time** (see the timeouts under "Messages"), on either
+  side: the call is given up on and the other side is sent a `hangup`. The
+  caller shows "didn't answer" if no answer came, which covers a callee that
+  is offline or whose `:call` crashed while starting, and "Can't reach
+  portaloft over the network" if one did but the media never got through
+  within 30s of it: the two devices
   can't reach each other (Wi-Fi client isolation, say, or two mesh nodes
   that don't pass traffic between their clients), which `ping` between them
   confirms. The `hangup` then says `"reason":"no_connection"`.
@@ -216,30 +242,36 @@ nobody can see that it is. Not at once, because of the screensaver above.
 
 ### On screen
 
-The call screen says what is going on at the top: "Ringing portaloft…"
-(calling), "Call from portaloficina" (called), "Connecting to portaloft…"
+The call screen says what is going on at the top: "Calling portaloft…"
+(until it says it's ringing), "Ringing portaloft…", "Call from portaloficina"
+(called), "Connecting to portaloft…"
 (answered), "Call connected" for 3s and then just the other device's name,
 and "Connection lost, reconnecting…" while the connection is down. At the
 end, for 2.5s before it closes, it says why: "portaloft hung up", "Call
 disconnected", "portaloft didn't answer", "Can't reach portaloft over the network", or
-the reason a call was refused ("It's night time at portaloft"). Hanging up
+the reason a call was refused ("It's night time at portaloft"). A called
+device that rang out says "Missed call from portaloficina". Hanging up
 yourself closes it at once.
 
-A called device rings first: for 3s it says "Incoming call from portaloft,
-will connect in 3 seconds", counting down, and beeps once a second, with the
-camera and microphone still off. The countdown only runs while the call can
-be seen (in front, with the focus, the screen on), and starts over each time
-it comes back into view, so a screensaver covering the call as it comes in
-(see "Waking up for a call") doesn't eat into it. The hang up button declines
-the call then,
+A called device rings first, beeping once a second, with the camera and
+microphone still off, and a green Answer button beside the hang up one.
+Answering by itself, it says "Incoming call from portaloft, will connect in
+3 seconds" (its delay), counting down. The countdown only runs while the
+call can be seen (in front, with the focus, the screen on), and starts over
+each time it comes back into view, so a screensaver covering the call as it
+comes in (see "Waking up for a call") doesn't eat into it. With a delay of
+0 it answers as soon as it can be seen. Not answering by itself, it says
+"Incoming call from portaloft" until someone answers, or for 45s. Answer
+answers at once either way, and the hang up button declines the call,
 which sends `reject` with `declined` (the caller shows "portaloft declined
-the call"). When the countdown ends it answers, and only then starts the
-media.
+the call"). Only on answering does it start the media.
 
 ## Security
 
-Answering by itself, 3s after it starts ringing, makes every Portal with calls on a camera and microphone
-that anyone who can publish to the broker can turn on. The app only checks
+Answering by itself, a few seconds after it starts ringing (the default),
+makes every Portal with calls on a camera and microphone that anyone who can
+publish to the broker can turn on. Turning answering by itself off in the
+Portalcom app closes that, at the price of someone having to be there. The app only checks
 the allow list, and `from` is just a field in the payload, so it can't tell
 who really sent an offer. **Restrict who can publish to `+/cmd/call/#` on the
 broker**: that is the real control. The media's encryption only helps as far
@@ -253,7 +285,7 @@ and counts the frames the Portal sends back:
 
 ```
 uv run tools/fake-call-peer.py --broker 10.0.0.10:1883 call portaloft/
-uv run tools/fake-call-peer.py --broker 10.0.0.10:1883 listen [--reject night]
+uv run tools/fake-call-peer.py --broker 10.0.0.10:1883 listen [--reject night] [--ring-seconds 20]
 ```
 
 `mosquitto_sub -v -t '+/cmd/call/#'` shows a handshake from any machine,

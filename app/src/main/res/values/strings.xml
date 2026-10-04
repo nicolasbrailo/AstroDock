@@ -180,7 +180,14 @@
     <string name="calls_off_note">Turn calls on to call other Portals, and to be called by them.</string>
     <string name="calls_no_permission">Calls need the camera and the microphone.</string>
     <string name="calls_enabled">Take part in calls</string>
-    <string name="calls_enabled_summary">Other Portals with this on can call this one, and it answers by itself after ringing for 3 seconds, showing its camera and playing its microphone. Needs the camera and the microphone. Calls are refused while the night rule applies.</string>
+    <string name="calls_enabled_summary">Other Portals with this on can call this one, and it rings until someone answers, or answers by itself, below. Needs the camera and the microphone. Calls are refused while the night rule applies.</string>
+    <string name="calls_auto_answer">Answer by itself</string>
+    <string name="calls_auto_answer_summary">After ringing for the time below, showing the camera and playing the microphone with nobody having to be there. Off, a call rings until someone taps Answer, for up to 45 seconds.</string>
+    <string name="calls_auto_answer_delay">Ring before answering</string>
+    <plurals name="calls_auto_answer_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
     <string name="calls_allowed">Who can call</string>
     <string name="calls_allowed_hint">Topic prefixes of the devices that may call this one, comma separated, e.g. kitchen-portal, portaloft-portal. Empty means any device on the broker, so restrict who can publish to the broker too.</string>
     <string name="calls_allowed_anyone">Any device on the broker</string>
@@ -188,6 +195,7 @@
     <string name="call_no_peers">No other Portal that takes calls is online. Calls have to be turned on in each one\'s Portalcom app.</string>
     <string name="call_no_broker">Calls need the MQTT broker, which isn\'t connected.</string>
     <string name="call_busy">Already in a call</string>
+    <string name="call_calling">Calling %1$s…</string>
     <string name="call_ringing">Ringing %1$s…</string>
     <string name="call_connecting">Connecting to %1$s…</string>
     <string name="call_connected">Call connected</string>
@@ -197,6 +205,8 @@
         <item quantity="one">Incoming call from %1$s, will connect in %2$d second</item>
         <item quantity="other">Incoming call from %1$s, will connect in %2$d seconds</item>
     </plurals>
+    <string name="call_incoming_answer">Incoming call from %1$s</string>
+    <string name="call_answer">Answer</string>
     <string name="call_decline">Decline</string>
     <string name="call_hang_up">Hang up</string>
     <string name="call_ended">Call ended</string>
@@ -204,6 +214,7 @@
     <string name="call_hung_up">%1$s hung up</string>
     <string name="call_no_connection">Can\'t reach %1$s over the network</string>
     <string name="call_no_answer">%1$s didn\'t answer</string>
+    <string name="call_missed">Missed call from %1$s</string>
     <string name="call_unreachable">Can\'t reach the MQTT broker</string>
     <string name="call_no_permission">Calls need the camera and the microphone (Portalcom app)</string>
     <string name="call_rejected_disabled">%1$s doesn\'t take calls</string>

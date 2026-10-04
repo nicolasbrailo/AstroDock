@@ -34,11 +34,11 @@ import org.webrtc.SurfaceViewRenderer
 // would be second copies, and a second StateReporter would be a second MQTT
 // client with our client id.
 //
-// An incoming call rings for a few seconds first, saying who is calling and
-// counting down, and the hang up button declines it until then. After that it
-// connects by itself. The countdown only runs while it can be seen, so the
-// warning is never cut short by whatever covered the screen as the call came
-// in.
+// An incoming call rings first, saying who is calling, with a button to answer
+// it and the hang up button to decline it. Unless the Portalcom app says to
+// wait for someone to answer, it counts down a few seconds and then connects by
+// itself. The countdown only runs while it can be seen, so the warning is never
+// cut short by whatever covered the screen as the call came in.
 //
 // A call only lasts while this is in front. Leaving it, by Home or by the
 // screen being switched off, hangs up, so the camera is never on with nobody
@@ -51,6 +51,7 @@ class CallActivity : AppCompatActivity() {
     private lateinit var peerName: String
     private lateinit var status: TextView
     private lateinit var hangUpButton: View
+    private lateinit var answerButton: View
     private var media: CallMedia? = null
     private var service: Messenger? = null
     private var bound = false
@@ -68,25 +69,34 @@ class CallActivity : AppCompatActivity() {
     private var ringing = false
     // The countdown is running, which it only does while the screen can be seen
     private var counting = false
-    // Seconds of ringing left
+    // How long an incoming call rings before answering by itself, null for
+    // until someone answers it
+    private var answerAfter: Int? = null
+    // Seconds of ringing left, when it answers by itself
     private var ringLeft = 0
     // Between onResume and onPause
     private var resumed = false
     private var ringTone: ToneGenerator? = null
     // The caller's offer, for an incoming call
     private var offer: String? = null
+    private val incoming: Boolean get() = offer != null
 
-    // Once a second while ringing: the countdown and a ring, and when it's
-    // over, the call
+    // Once a second while ringing: a ring, and the countdown, and when that's
+    // over, the call. Waiting for someone to answer, it rings until CallRouter
+    // gives up on the call.
     private val ring = object : Runnable {
         override fun run() {
-            if (ringLeft == 0) {
-                answer()
-                return
+            if (answerAfter == null) {
+                status.text = getString(R.string.call_incoming_answer, peerName)
+            } else {
+                if (ringLeft == 0) {
+                    answer()
+                    return
+                }
+                status.text = resources.getQuantityString(R.plurals.call_incoming_countdown, ringLeft, peerName, ringLeft)
+                ringLeft--
             }
-            status.text = resources.getQuantityString(R.plurals.call_incoming_countdown, ringLeft, peerName, ringLeft)
             ringTone?.startTone(ToneGenerator.TONE_PROP_BEEP2, TONE_MILLIS)
-            ringLeft--
             main.postDelayed(this, RING_STEP_MILLIS)
         }
     }
@@ -168,10 +178,13 @@ class CallActivity : AppCompatActivity() {
         }
         peerName = intent.getStringExtra(EXTRA_PEER_NAME).orEmpty()
         offer = intent.getStringExtra(EXTRA_OFFER)
+        answerAfter = intent.getIntExtra(EXTRA_ANSWER_AFTER, ANSWER_BY_HAND).takeIf { it >= 0 }
         status = findViewById(R.id.call_status)
-        status.text = getString(if (offer == null) R.string.call_ringing else R.string.call_incoming, peerName)
+        status.text = getString(if (incoming) R.string.call_incoming else R.string.call_calling, peerName)
         hangUpButton = findViewById(R.id.call_hang_up)
         hangUpButton.setOnClickListener { if (ringing) decline() else hangUp() }
+        answerButton = findViewById(R.id.call_answer)
+        answerButton.setOnClickListener { if (ringing) answer() }
 
         bound = bindService(Intent(this, CallSignalService::class.java), connection, BIND_AUTO_CREATE)
 
@@ -180,7 +193,7 @@ class CallActivity : AppCompatActivity() {
             endWith(getString(R.string.call_no_permission))
             return
         }
-        if (offer == null) startMedia() else startRinging()
+        if (incoming) startRinging() else startMedia()
     }
 
     private fun startMedia() {
@@ -188,12 +201,12 @@ class CallActivity : AppCompatActivity() {
             .also { it.start(offer) }
     }
 
-    // The camera and the microphone are about to go on without anyone here
+    // The camera and the microphone may be about to go on without anyone here
     // having asked for it, so it shouldn't happen silently, nor without a
     // chance to say no
     private fun startRinging() {
         ringing = true
-        ringLeft = RING_SECONDS
+        ringLeft = answerAfter ?: 0
         ringTone = try {
             ToneGenerator(AudioManager.STREAM_VOICE_CALL, TONE_VOLUME)
         } catch (e: RuntimeException) {
@@ -201,6 +214,7 @@ class CallActivity : AppCompatActivity() {
             null
         }
         hangUpButton.contentDescription = getString(R.string.call_decline)
+        answerButton.visibility = View.VISIBLE
         updateCountdown()
     }
 
@@ -215,7 +229,7 @@ class CallActivity : AppCompatActivity() {
         if (visible == counting) return
         counting = visible
         main.removeCallbacks(ring)
-        ringLeft = RING_SECONDS
+        ringLeft = answerAfter ?: 0
         if (visible) {
             Log.i(TAG, "The call can be seen, counting down")
             ring.run()
@@ -232,12 +246,14 @@ class CallActivity : AppCompatActivity() {
         ringTone?.release()
         ringTone = null
         hangUpButton.contentDescription = getString(R.string.call_hang_up)
+        answerButton.visibility = View.GONE
     }
 
     private fun answer() {
         stopRinging()
         if (over) return
         Log.i(TAG, "Answering the call from $peerName")
+        tell(CallIpc.MSG_ANSWERING)
         status.text = getString(R.string.call_incoming, peerName)
         startMedia()
     }
@@ -299,6 +315,7 @@ class CallActivity : AppCompatActivity() {
 
     private fun onReply(message: Message) {
         when (message.what) {
+            CallIpc.MSG_REMOTE_RINGING -> showStatus(getString(R.string.call_ringing, peerName))
             CallIpc.MSG_REMOTE_ANSWER -> message.data.getString(CallIpc.KEY_SDP)?.let {
                 showStatus(getString(R.string.call_connecting, peerName))
                 media?.setRemoteAnswer(it)
@@ -318,6 +335,8 @@ class CallActivity : AppCompatActivity() {
                     RejectReason.NIGHT -> R.string.call_rejected_night
                     RejectReason.BUSY -> R.string.call_rejected_busy
                     RejectReason.DECLINED -> R.string.call_rejected_declined
+                    // Sent by the callee, and told to it by CallRouter
+                    RejectReason.NO_ANSWER -> if (incoming) R.string.call_missed else R.string.call_no_answer
                 },
                 peerName,
             )
@@ -346,6 +365,7 @@ class CallActivity : AppCompatActivity() {
         }
         showStatus(text)
         hangUpButton.visibility = View.GONE
+        answerButton.visibility = View.GONE
         main.postDelayed({ finish() }, END_TEXT_MILLIS)
     }
 
@@ -380,14 +400,18 @@ class CallActivity : AppCompatActivity() {
         const val EXTRA_PEER_NAME = "peer_name"
         // The caller's offer, for an incoming call; none when we are calling
         const val EXTRA_OFFER = "offer"
+        // For an incoming call: seconds of ringing before it answers by
+        // itself, or ANSWER_BY_HAND to ring until someone answers it. Read
+        // by CallRouter from CallSettings, since this process's copy of the
+        // preferences could be stale.
+        const val EXTRA_ANSWER_AFTER = "answer_after"
+        const val ANSWER_BY_HAND = -1
         private const val END_TEXT_MILLIS = 2_500L
         private const val CONNECTED_TEXT_MILLIS = 3_000L
         // Longer than CallRouter takes to wake the device out of a screensaver
         private const val AWAY_MILLIS = 3_000L
         private const val TONE_VOLUME = 80
         private const val TONE_MILLIS = 400
-        // How long an incoming call rings before it connects by itself
-        private const val RING_SECONDS = 3
         private const val RING_STEP_MILLIS = 1_000L
     }
 }

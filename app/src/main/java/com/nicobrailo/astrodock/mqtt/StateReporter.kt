@@ -783,6 +783,7 @@ class StateReporter private constructor(private val context: Context) {
         CommandKind.CALL_ANSWER -> callSignal(CallVerb.ANSWER, payload)
         CommandKind.CALL_REJECT -> callSignal(CallVerb.REJECT, payload)
         CommandKind.CALL_HANGUP -> callSignal(CallVerb.HANGUP, payload)
+        CommandKind.CALL_RINGING -> callSignal(CallVerb.RINGING, payload)
     }
 
     // A device's availability record, or its removal
@@ -824,6 +825,7 @@ class StateReporter private constructor(private val context: Context) {
             CallVerb.ANSWER -> Command.CallSignal(verb, callId, sdp = text("sdp") ?: return null)
             CallVerb.REJECT -> Command.CallSignal(verb, callId, reason = text("reason"))
             CallVerb.HANGUP -> Command.CallSignal(verb, callId, reason = text("reason"))
+            CallVerb.RINGING -> Command.CallSignal(verb, callId)
         }
     }
 

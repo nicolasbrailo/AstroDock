@@ -58,6 +58,11 @@ Usage: tools/push-config.sh [OPTION]...
   --calls-allowed PREFIXES Who may call, as comma separated topic prefixes,
                            e.g. 'kitchen-portal,portaloft-portal'. '' for any
                            device on the broker
+  --calls-auto-answer BOOL Answer by itself after ringing: true or false
+                           (default true). False rings until someone answers
+  --calls-auto-answer-seconds N
+                           How long to ring before answering by itself, 0 to
+                           10 (default 3)
 
   --show                   Print the settings on the device and exit
   --reset                  Replace every setting, instead of editing what's there
@@ -122,6 +127,9 @@ while [[ $# -gt 0 ]]; do
     --calls-enabled)
       boolean "$2" "$1"; set_pref calls_enabled "$2" bool; calls=$2; shift 2 ;;
     --calls-allowed) set_pref calls_allowed "$2"; shift 2 ;;
+    --calls-auto-answer) boolean "$2" "$1"; set_pref calls_auto_answer "$2" bool; shift 2 ;;
+    --calls-auto-answer-seconds)
+      number "$2" "$1" 0 10; set_pref calls_auto_answer_seconds "$2" int; shift 2 ;;
     --show) show=1; shift ;;
     --reset) reset=1; shift ;;
     -h | --help) usage; exit 0 ;;
