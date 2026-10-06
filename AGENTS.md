@@ -257,6 +257,9 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   record (`callablePeers`), which is the list of devices to call. Our own
   `availability` record says `calls: true` while calls are on, and is
   republished when that setting changes.
+  `cmd/doorbell/ring` (`{"rtsp_urls":{"main":"rtsp://...","sub":"rtsp://..."}}`,
+  from zmw_homeboard when the doorbell rings) goes to `DoorbellViewer` (see
+  `doorbell/` below).
   Nothing on screen depends on MQTT, so a broker that can't be reached would
   only show up in the log: the reporter therefore keeps an `alert` (the last
   thing that went wrong, null while it's fine) and the home screen shows it in
@@ -423,6 +426,19 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   availability record). Tapping a device places the call and closes the
   screen, so hanging up returns to the slideshow. There are no ICE servers:
   every device is on the same network.
+- `doorbell/`: shows the door when the doorbell rings. zmw_homeboard sends
+  `cmd/doorbell/ring` with the door camera's RTSP streams by name;
+  `Doorbell.pickStream` (unit tested) takes `sub`, then `main`, then any
+  other, since the sub stream is what BatiDoorLink was tested with on a
+  Portal. `DoorbellViewer` wakes the screen and starts BatiDoorLink
+  (`../BatiDoorLink`, `com.nicobrailo.batidoorlink`) with an `ACTION_VIEW` of
+  that URL, from the background as calls are (SYSTEM_ALERT_WINDOW), and wakes
+  again while a screensaver covers it, as `CallRouter` does. Its wake lock
+  lasts 15s; BatiDoorLink keeps the screen on itself while it plays. The URL
+  carries the camera's password, so it is never logged. Without BatiDoorLink
+  or a stream, the ring is a 60s text announcement, which only shows over a
+  slideshow. It ignores night hours and the call settings: someone is at the
+  door either way.
 - `alarm/`: alarms that start a media app, edited in the Alarms app:
   `AlarmsActivity.kt`, a launcher activity of ours with its own label and
   icon (`res/mipmap-*/ic_alarms.png`, made from `alarm.webp`), which `LauncherModel` lets

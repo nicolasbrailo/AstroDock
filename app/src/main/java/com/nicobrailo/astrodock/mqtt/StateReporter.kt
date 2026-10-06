@@ -29,6 +29,8 @@ import com.nicobrailo.astrodock.call.CallRouter
 import com.nicobrailo.astrodock.call.CallSettings
 import com.nicobrailo.astrodock.call.CallVerb
 import com.nicobrailo.astrodock.call.Calls
+import com.nicobrailo.astrodock.doorbell.Doorbell
+import com.nicobrailo.astrodock.doorbell.DoorbellViewer
 import com.nicobrailo.astrodock.immich.AlbumFilter
 import com.nicobrailo.astrodock.immich.ImmichPictureInfo
 import com.nicobrailo.astrodock.presence.PortalLog
@@ -784,6 +786,13 @@ class StateReporter private constructor(private val context: Context) {
         CommandKind.CALL_REJECT -> callSignal(CallVerb.REJECT, payload)
         CommandKind.CALL_HANGUP -> callSignal(CallVerb.HANGUP, payload)
         CommandKind.CALL_RINGING -> callSignal(CallVerb.RINGING, payload)
+        // {"rtsp_urls":{"main":"rtsp://...","sub":"rtsp://..."}}. A ring without
+        // streams is still a ring.
+        CommandKind.DOORBELL_RING -> {
+            val streams = JSONObject(payload).optJSONObject("rtsp_urls")
+            val urls = streams?.keys()?.asSequence()?.associateWith { streams.optString(it) }.orEmpty()
+            Command.DoorbellRing(Doorbell.pickStream(urls))
+        }
     }
 
     // A device's availability record, or its removal
@@ -850,6 +859,14 @@ class StateReporter private constructor(private val context: Context) {
             }
             // Calls come in with nothing on screen, and bring their own
             is Command.CallSignal -> CallRouter.get(context).onSignal(command)
+            // So does the doorbell. Without a viewer or a stream, saying so is
+            // all that's left, and that only shows over a slideshow.
+            is Command.DoorbellRing -> {
+                val url = command.rtspUrl
+                if (url == null || !DoorbellViewer.get(context).show(url)) {
+                    carryOut(Command.Announce(context.getString(R.string.doorbell_ring_msg), DOORBELL_ANNOUNCE_SECONDS))
+                }
+            }
             // Played whether or not anything is on screen: that is when it's
             // most likely to matter
             is Command.AnnounceAudio -> {
@@ -1259,6 +1276,8 @@ class StateReporter private constructor(private val context: Context) {
         private const val OUR_LOCK_MILLIS = 5_000L
         // How long force_on holds the screen before the usual timeouts resume
         private const val FORCE_ON_MILLIS = 30 * 60 * 1000L
+        // How long a ring stays on screen when the door can't be shown
+        private const val DOORBELL_ANNOUNCE_SECONDS = 60
         // How long an announcement that failed says so on screen
         private const val ANNOUNCE_ERROR_SECONDS = 30
         // For an audio announcement whose volume is missing or out of range

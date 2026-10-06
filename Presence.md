@@ -132,9 +132,67 @@ went on receiving frames (`AlohaCameraPipeline: Frame available for analysis
 stream`) and reporting nobody for over an hour, with someone in front of it,
 so nothing woke the screen from `STANDBY`. Its auto-framing logged `Forcing
 brake movement` about once a second throughout, which may be the sign of
-having nobody to frame. It had worked earlier the same day. A reboot fixed
-it; an app can't restart it. The sign is no `Notify people presence` at all
-while somebody is demonstrably there (touching the screen).
+having nobody to frame. It had worked earlier the same day. The sign is no
+`Notify people presence` at all while somebody is demonstrably there (touching
+the screen).
+
+**What clears it** (measured 2026-10-04 on the Portal+, caught stuck a second
+time within 24h):
+- **A reboot** clears it.
+- **Turning the screen off with the power button and back on does not.** That
+  does the deepest teardown short of a reboot: `transitionToState [SLEEP]`,
+  `Turn Camera off`, `stopCameraService`, then on wake `CameraServiceController:
+  start` with `profile: PERFORMANCE`. The camera service fully stopped and
+  restarted, and it stayed stuck: still no `Notify people presence`, still
+  `Forcing brake movement` once a second, and analysis frames still at the 5s
+  STANDBY cadence despite the PERFORMANCE profile. So the wedge lives in the
+  `aiservice` process, not in the camera session or the resource profile.
+- **`adb shell am force-stop com.facebook.portal.aiservice` clears it.** The
+  system respawns the process (its services are `startRequested=true
+  stopIfKilled=true`), and detection was back within ~15s: `Notify people
+  presence` on the healthy 30s beat, no more brake spam, and the app's
+  `errors` cleared the `presence` entry on its own (PortalLog follows the new
+  lines). This is the fastest recovery, but force-stop of a priv-app needs
+  system privilege, so only adb can do it, not the app itself.
+
+**An app still can't recover from it on its own.** Recovery needs the process
+killed or the device rebooted:
+- `am force-stop` needs system privilege: not callable by a third-party app.
+- `DevicePolicyManager.reboot()` needs device **owner**; AstroDock is only a
+  device **admin** (force-lock), and device owner can't be set on a
+  provisioned Portal. So this API is out.
+- A `com.facebook.aloha.adb.OTA_REBOOT_NOW` broadcast to
+  `com.facebook.alohaapps.settings`'s `OtaIntentReceiver` looked like a way in
+  (its intent filter showed no permission in the resolver), but it is **not
+  usable**: tested 2026-10-04, the broadcast is delivered and then refused with
+  `Permission Denial ... requires com.facebook.aloha.permission.ADB_INTENT`,
+  and even adb shell (uid 2000) is refused. That permission is `prot=signature`
+  (sourced from `com.facebook.alohaapps.settings`), so only apps signed with
+  Facebook's certificate can send it. The device never rebooted.
+
+So **no in-app reboot or restart path exists.** Recovery is a physical reboot,
+or an adb-connected host running `am force-stop com.facebook.portal.aiservice`
+or a reboot. Everything the app itself can reach (camera off/on, its own
+broadcasts, device-admin APIs) is either proven useless or privilege-blocked,
+so the app's only move is to reduce how often the wedge happens (prevention
+below) and to flag it (`stuck`) when it does.
+
+**The likely trigger is the camera handover a call forces.** AstroDock's call
+opens camera **0**; `aiservice`'s presence detector runs on camera **1**, and
+the Portal's camera HAL can't run both independently. So every call we place
+force-closes and re-establishes aiservice's camera-1 session: the camera log
+shows our `CONNECT device 0` and aiservice's `CONNECT`/`DISCONNECT device 1`
+at the same instant (measured 14:44:35, and on earlier calls). That
+reconfigure is the stress event, and occasionally aiservice fails to
+re-establish its pose pipeline after it and wedges. It is **not** deterministic:
+a controlled call on 2026-10-04 forced the churn and aiservice recovered
+cleanly (presence back on the 30s beat, no brake spam). This fits the rate
+seen (twice in 24h, not every call). The Portal's own camera apps (WhatsApp,
+photobooth, superframe) cause the same churn, so camera contention in general
+is the suspect, not our calls alone, and long aiservice uptime (~17h before
+wedging here) may also contribute. The cheapest mitigation we control is to
+open camera 0 as rarely and briefly as possible, cutting the number of these
+stress events; the `stuck` alert then tells us when one lands anyway.
 
 ## Not yet explained
 

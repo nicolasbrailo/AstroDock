@@ -40,6 +40,12 @@ class CommandsTest {
     }
 
     @Test
+    fun recognisesTheDoorbell() {
+        assertEquals(CommandKind.DOORBELL_RING, Commands.kind("${prefix}cmd/doorbell/ring", prefix))
+        assertNull(Commands.kind("kitchen/cmd/doorbell/ring", prefix))
+    }
+
+    @Test
     fun ignoresTheRest() {
         // The homeboard's own renderer commands
         assertNull(Commands.kind("${prefix}cmd/ambience/set_svg_overlay", prefix))

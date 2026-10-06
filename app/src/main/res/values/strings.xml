@@ -36,6 +36,7 @@
     <string name="mqtt_prefix_owner_unknown">it doesn\'t say which</string>
     <string name="mqtt_alert_subscribe">Connected to the MQTT broker, but can\'t subscribe to its commands\n%1$s</string>
     <string name="announce_audio_default_msg">Audio announcement in progress</string>
+    <string name="doorbell_ring_msg">Someone is at the door</string>
     <string name="announce_audio_fetch_failed">Received audio announce request but couldn\'t fetch \"%1$s\"\n%2$s</string>
     <string name="announce_audio_play_failed">Received audio announce request but couldn\'t play \"%1$s\"\n%2$s</string>
     <string name="slideshow_error">%1$s\n\nRetrying soon. Tap the screen for settings.</string>

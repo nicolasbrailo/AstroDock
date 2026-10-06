@@ -84,6 +84,12 @@
         <intent>
             <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
         </intent>
+        <!-- BatiDoorLink, which shows the door when the doorbell rings
+             (doorbell/DoorbellViewer.kt) -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="rtsp" />
+        </intent>
     </queries>
 
     <!-- usesCleartextTraffic: Immich servers on a home network are often plain http -->

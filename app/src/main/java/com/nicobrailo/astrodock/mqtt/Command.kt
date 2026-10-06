@@ -11,7 +11,8 @@ import com.nicobrailo.astrodock.immich.AlbumFilter
 // the slideshow takes pictures from (see AlbumFilter). The homeboard reads its
 // pictures from disk, so it has nothing to say about Immich albums. The call
 // ones aren't from the spec either: they are how two devices set up a call
-// (see call/Calls.kt and CALLING.md).
+// (see call/Calls.kt and CALLING.md). Nor is doorbell/ring, which zmw_homeboard
+// sends when someone rings at the door (see doorbell/Doorbell.kt).
 sealed interface Command {
     object Next : Command
     object Previous : Command
@@ -35,6 +36,12 @@ sealed interface Command {
     // id; an offer also has who is calling (`from`, their prefix), when
     // (`sentAt`, seconds) and `sdp`, an answer has `sdp`, and a rejection
     // `reason`, as may a hangup. A ringing has nothing else.
+    // Someone rang at the door. rtspUrl is the camera stream to show, with its
+    // credentials, or null if the ring came without one we can play.
+    class DoorbellRing(val rtspUrl: String?) : Command {
+        // The URL carries the camera's password, which has no place in a log
+        override fun toString() = "DoorbellRing(${if (rtspUrl == null) "no stream" else "with a stream"})"
+    }
     data class CallSignal(
         val verb: CallVerb,
         val callId: String,
@@ -61,6 +68,7 @@ enum class CommandKind {
     CALL_REJECT,
     CALL_HANGUP,
     CALL_RINGING,
+    DOORBELL_RING,
 }
 
 object Commands {
@@ -83,6 +91,7 @@ object Commands {
             "cmd/call/reject" -> CommandKind.CALL_REJECT
             "cmd/call/hangup" -> CommandKind.CALL_HANGUP
             "cmd/call/ringing" -> CommandKind.CALL_RINGING
+            "cmd/doorbell/ring" -> CommandKind.DOORBELL_RING
             else -> null
         }
     }
