@@ -28,7 +28,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import android.content.pm.PackageManager
-import com.nicobrailo.astrodock.BuildConfig
 import java.io.File
 import java.io.IOException
 import java.security.MessageDigest
@@ -101,7 +100,10 @@ class InstallAppsFragment : Fragment() {
         if (installed && !waitingForInstaller) installer.forget(app)
 
         if (installed && app.githubRepo != null) {
-            status.text = getString(R.string.install_current_version, BuildConfig.VERSION_NAME)
+            // Not BuildConfig's: AstroDock isn't the only app updated this way
+            val installedVersion = installedVersion(app)
+            status.text = installedVersion?.let { getString(R.string.install_current_version, it) }
+                ?: getString(R.string.install_installed)
             // Checked when the user asks, not on every visit to the tab: it's
             // a request to GitHub and a hash of the whole APK
             button.setText(R.string.install_button_check_update)
@@ -122,7 +124,7 @@ class InstallAppsFragment : Fragment() {
                             "the release has ${release.digest}")
                         val current = sameBuild(release.digest, installedSha256)
                             ?: release.tag.trimStart('v', 'V')
-                                .equals(BuildConfig.VERSION_NAME, ignoreCase = true)
+                                .equals(installedVersion, ignoreCase = true)
                         button.isEnabled = true
                         when {
                             current -> {
@@ -152,6 +154,8 @@ class InstallAppsFragment : Fragment() {
                     }
                 }
             }
+        } else if (app.githubRepo != null) {
+            githubInstallRow(app, status, button)
         } else if (app.versionFeed != null) {
             versionFeedRow(app, app.versionFeed, installed, status, button)
         } else {
@@ -173,6 +177,37 @@ class InstallAppsFragment : Fragment() {
             }
         }
         return view
+    }
+
+    // A row for an app from GitHub releases that isn't installed yet. Its file
+    // is only known once the latest release has been read (see githubAssets),
+    // which waits for the tap, as checking for an update does.
+    private fun githubInstallRow(app: Installable, status: TextView, button: Button) {
+        status.setText(R.string.install_not_installed)
+        button.setText(R.string.install_button_install)
+        button.setOnClickListener {
+            button.isEnabled = false
+            status.setText(R.string.install_checking_update)
+            viewLifecycleOwner.lifecycleScope.launch {
+                val release = try {
+                    withContext(Dispatchers.IO) { latestRelease(app) }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Can't read the latest release of ${app.name}", e)
+                    status.text = getString(R.string.install_failed, e.message)
+                    button.isEnabled = true
+                    return@launch
+                }
+                button.isEnabled = true
+                val apkUrl = release.apkUrl
+                if (apkUrl == null) {
+                    // A release with nothing in it we can install
+                    status.setText(R.string.install_not_installed)
+                    openInBrowser(app.pageUrl)
+                } else {
+                    download(app.copy(apkUrl = apkUrl), status, button)
+                }
+            }
+        }
     }
 
     // A row for an app whose current version is published (see VersionFeed).

@@ -91,6 +91,18 @@ val INSTALLABLE_APPS = listOf(
         ),
     ),
     Installable(
+        name = "BatiDoorLink",
+        packageName = "com.nicobrailo.batidoorlink",
+        description = "Doorbell viewer: live video and sound from an RTSP camera, and talking " +
+            "back through its speaker. AstroDock opens it when the doorbell rings.",
+        // Resolved from the latest release, see githubAssets
+        apkUrl = null,
+        pageUrl = "https://github.com/nicolasbrailo/BatiDoorLink/releases",
+        githubRepo = "nicolasbrailo/BatiDoorLink",
+        // The release build: unlike AstroDock, nothing needs run-as on it
+        githubAssets = listOf("BatiDoorLink-release.apk", "BatiDoorLink-debug.apk"),
+    ),
+    Installable(
         name = "F-Droid",
         packageName = "org.fdroid.fdroid",
         description = "App store for free and open source apps. The easiest way to install and " +

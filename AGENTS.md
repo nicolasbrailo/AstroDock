@@ -148,7 +148,11 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   as far as it's written like the version name, so the tag is compared with
   `BuildConfig.VERSION_NAME` only for a release old enough to have no digest.
   A locally built APK is never the published one, so on a development device
-  this always offers the update. Which file it takes is decided by
+  this always offers the update. BatiDoorLink is the other such entry: a
+  GitHub app that isn't installed yet reads the latest release when its
+  button is tapped and downloads the APK in it, and the version shown, and
+  the tag fallback, use the installed app's `versionName`, not AstroDock's
+  `BuildConfig`. Which file it takes is decided by
   `githubAssets`, the names it prefers, read from the release rather than built
   into `apkUrl`, because `releases/latest/download/<name>` redirects to the
   newest release whether or not that release holds a file by that name, so a
