@@ -18,14 +18,23 @@ import com.nicobrailo.astrodock.CallsActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
+// What the home screen shows over the pictures, as a column of icons: the
+// shortcuts other apps pinned (PinnedShortcut) and the apps the user pinned
+// from the app list (LauncherApp, see HomePins).
+sealed interface HomeEntry {
+    val label: String
+    val icon: Drawable?
+    val packageName: String
+}
+
 // One launchable app, from LauncherApps (not queryIntentActivities): that way
 // work-profile and cloned apps are included, their icons carry the profile
 // badge, and the system tells us when apps are installed or removed.
 data class LauncherApp(
-    val label: String,
+    override val label: String,
     val component: ComponentName,
     val user: UserHandle,
-    val icon: Drawable,
+    override val icon: Drawable,
     val isSystem: Boolean, // Can't be uninstalled, only disabled
     val isOwnProfile: Boolean,
     // The app asks for dark status bar icons. The Portal draws its Back and
@@ -33,7 +42,9 @@ data class LauncherApp(
     // and untappable over such an app, leaving no way back to the launcher
     // (see HomeButtonService).
     val wantsLightStatusBar: Boolean,
-) {
+) : HomeEntry {
+    override val packageName: String get() = component.packageName
+
     // Identifies the app in a folder. The user is included so the same app in a
     // work profile is a different entry.
     val key: String get() = "${component.flattenToString()}@${user.hashCode()}"
@@ -45,11 +56,11 @@ data class LauncherApp(
 // the request, and LauncherModel lists them. Only the default home app may read
 // or start them, so anywhere else there are none.
 data class PinnedShortcut(
-    val label: String,
-    val icon: Drawable?,
+    override val label: String,
+    override val icon: Drawable?,
     val info: ShortcutInfo,
-) {
-    val packageName: String get() = info.`package`
+) : HomeEntry {
+    override val packageName: String get() = info.`package`
 
     // Identifies the shortcut in a folder, next to the apps' keys (see
     // LauncherApp.key); the prefix keeps the two from ever meaning the same
@@ -112,6 +123,23 @@ class LauncherModel(private val context: Context, private val onChanged: () -> U
                 val light = apps.filter { it.wantsLightStatusBar }.map { it.label }
                 Log.i(TAG, "Apps that hide the Portal's Back/Home buttons: $light")
             }
+    }
+
+    // The apps with these keys (LauncherApp.key), sorted by name, leaving out
+    // any that aren't installed (any more). Only asks about their packages,
+    // rather than reading every app's label, icon and theme as apps() does.
+    suspend fun apps(keys: Set<String>): List<LauncherApp> = withContext(Dispatchers.IO) {
+        if (keys.isEmpty()) return@withContext emptyList()
+        val packages = keys.mapNotNull { ComponentName.unflattenFromString(it.substringBeforeLast('@'))?.packageName }
+            .toSet()
+        val profiles = userManager?.userProfiles ?: listOf(Process.myUserHandle())
+        profiles.flatMap { user ->
+            packages.flatMap { packageName ->
+                launcherApps?.getActivityList(packageName, user).orEmpty().map { toApp(it, user) }
+            }
+        }
+            .filter { it.key in keys }
+            .sortedBy { it.label.lowercase() }
     }
 
     private fun toApp(info: LauncherActivityInfo, user: UserHandle): LauncherApp {

@@ -23,6 +23,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.nicobrailo.astrodock.apps.Folder
 import com.nicobrailo.astrodock.apps.FolderOps
 import com.nicobrailo.astrodock.apps.FolderStore
+import com.nicobrailo.astrodock.apps.HomePins
 import com.nicobrailo.astrodock.apps.LauncherApp
 import com.nicobrailo.astrodock.apps.LauncherModel
 import com.nicobrailo.astrodock.apps.PinnedShortcut
@@ -40,7 +41,8 @@ import java.util.UUID
 //  - Dropping it on another app puts both in a new folder; dropping it on a
 //    folder adds it to that folder.
 //  - Letting go without moving shows a menu instead (app info, uninstall,
-//    renaming and ungrouping a folder, or removing a shortcut).
+//    pinning an app to the home screen, renaming and ungrouping a folder,
+//    or removing a shortcut).
 //  - Shortcuts go in folders like apps do.
 class AppListActivity : AppCompatActivity() {
     // What the grid shows: an app or a shortcut on its own, or a folder of them
@@ -73,6 +75,7 @@ class AppListActivity : AppCompatActivity() {
     private lateinit var model: LauncherModel
     private lateinit var folderStore: FolderStore
     private lateinit var homeButtonApps: HomeButtonApps
+    private lateinit var homePins: HomePins
     private val adapter = EntryAdapter()
 
     private var apps: List<LauncherApp> = emptyList()
@@ -96,6 +99,7 @@ class AppListActivity : AppCompatActivity() {
         model = LauncherModel(this) { refresh() }
         folderStore = FolderStore(this)
         homeButtonApps = HomeButtonApps(this)
+        homePins = HomePins(this)
 
         val grid = findViewById<RecyclerView>(R.id.apps)
         grid.layoutManager = GridLayoutManager(this, columns())
@@ -264,6 +268,14 @@ class AppListActivity : AppCompatActivity() {
             onChanged()
             true
         }
+        // Shown over the pictures, like the pages pinned from a browser
+        val pinned = homePins.isPinned(app)
+        menu.menu.add(if (pinned) R.string.app_menu_unpin_home else R.string.app_menu_pin_home)
+            .setOnMenuItemClickListener {
+                homePins.setPinned(app, !pinned)
+                onChanged()
+                true
+            }
         // Our own entry (the alarms) is part of this app: uninstalling it would
         // take the home screen with it, and it needs no home button
         val ours = app.component.packageName == this.packageName

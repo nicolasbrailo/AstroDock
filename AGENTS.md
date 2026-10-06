@@ -634,6 +634,13 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   rest of that app's. Only the default home app may do any of that, so
   anywhere else the list is empty. `LauncherModel`'s callback reports them
   changing (`onShortcutsChanged`) like it does apps.
+- `apps/HomePins.kt`: the apps pinned to the home screen from the app list's
+  long-press menu ("Pin to home"), by `LauncherApp.key`, in their own
+  preferences file. Android keeps pinned shortcuts but has nothing like it for
+  apps, so these are ours. The home screen shows both in one column
+  (`HomeEntry` is what the two have in common), loading only the pinned apps'
+  packages (`LauncherModel.apps(keys)`) rather than the whole list. An
+  uninstalled app stays pinned, and shows again if it comes back.
 - `apps/Folders.kt`: the folder rules as pure functions (`FolderOps`), so they
   can be unit tested. An app is in at most one folder, and a folder with fewer
   than two apps dissolves.
@@ -707,7 +714,8 @@ documents the API). Keep the two behaving the same.
   loading it failed, the tick retries instead. Every swipe restarts the timer,
   which then moves forward from wherever the user is, including from inside
   the history.
-- The top left corner shows the pinned shortcuts as a column of icons (no
+- The top left corner shows the pinned shortcuts and the apps pinned from the
+  app list (`HomePins`), sorted together by name, as a column of icons (no
   labels, to keep it small over the pictures), and tapping one opens it, in
   the screensaver too (`onScreensaverTap` finds the icon by its tag). The debug
   text goes beside them. At night they are under the cover like the rest. The
@@ -773,8 +781,8 @@ documents the API). Keep the two behaving the same.
   reach the settings on the device.
 - Long-pressing an item starts a drag. Dropping an app on another app makes a
   folder; dropping it on a folder adds it. A long-press that never moves shows a
-  menu instead: app info and uninstall for an app (hidden for system apps and
-  other profiles), rename and ungroup for a folder. Inside an open folder, the
+  menu instead: app info, pin to (or unpin from) the home screen, and
+  uninstall for an app (hidden for system apps and other profiles), rename and ungroup for a folder. Inside an open folder, the
   menu can also take an app out. Uninstalling needs `REQUEST_DELETE_PACKAGES`
   in the manifest: without it `ACTION_DELETE` still starts the system's
   uninstaller, which closes again in the same instant, so the menu item looks

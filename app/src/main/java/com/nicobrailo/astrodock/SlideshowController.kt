@@ -29,6 +29,9 @@ import coil3.request.ErrorResult
 import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import coil3.size.ViewSizeResolver
+import com.nicobrailo.astrodock.apps.HomeEntry
+import com.nicobrailo.astrodock.apps.HomePins
+import com.nicobrailo.astrodock.apps.LauncherApp
 import com.nicobrailo.astrodock.apps.LauncherModel
 import com.nicobrailo.astrodock.apps.PinnedShortcut
 import com.nicobrailo.astrodock.alarm.AlarmReceiver
@@ -76,8 +79,9 @@ import kotlin.math.sign
 //   so the device can play music while the pictures keep going (see
 //   NowPlaying). It needs notification access, and stays hidden without it.
 // - The top left corner shows the shortcuts other apps pinned (a web page from
-//   Firefox), so they are one tap away, even from the screensaver, unless the
-//   Slideshow tab turns them off.
+//   Firefox) and the apps pinned from the app list (HomePins), so they are one
+//   tap away, even from the screensaver, unless the Slideshow tab turns them
+//   off.
 // - If the user asked for it, the screen goes dark during the night hours
 //   (see checkNight), a little after they last touched it.
 //
@@ -144,8 +148,10 @@ class SlideshowController(
     private val nowPlaying = NowPlaying(context) { updateNowPlaying() }
     private var nowPlayingJob: Job? = null
 
-    // The pinned shortcuts, as icons. Only watched while the slideshow is
-    // visible; the system says when one is pinned or removed.
+    // The pinned shortcuts and apps, as icons. Only watched while the slideshow
+    // is visible; the system says when a shortcut is pinned or removed, or an
+    // app installed or removed. Apps are pinned in the app list, which is in
+    // front meanwhile, so start() picks those up.
     private val shortcutsColumn: LinearLayout = root.findViewById(R.id.shortcuts)
     private val launcherModel = LauncherModel(context) { loadShortcuts() }
     private var shortcutsJob: Job? = null
@@ -300,12 +306,15 @@ class SlideshowController(
 
     private fun loadShortcuts() {
         shortcutsJob?.cancel()
-        shortcutsJob = scope.launch { showShortcuts(launcherModel.shortcuts()) }
+        shortcutsJob = scope.launch {
+            val apps = launcherModel.apps(HomePins(context).keys())
+            showShortcuts((launcherModel.shortcuts() + apps).sortedBy { it.label.lowercase() })
+        }
     }
 
     // Icons only, to keep them small over the pictures. The screensaver's views
     // never see a touch, so there onScreensaverTap finds the icon by its tag.
-    private fun showShortcuts(shortcuts: List<PinnedShortcut>) {
+    private fun showShortcuts(shortcuts: List<HomeEntry>) {
         shortcutsColumn.removeAllViews()
         val density = context.resources.displayMetrics.density
         val size = (SHORTCUT_ICON_DP * density).toInt()
@@ -329,15 +338,30 @@ class SlideshowController(
         shortcutsColumn.visibility = if (shortcuts.isEmpty()) View.GONE else View.VISIBLE
     }
 
-    private fun openShortcut(shortcut: PinnedShortcut): Boolean {
-        Log.i(TAG, "Opening the shortcut ${shortcut.label}")
-        if (!launcherModel.launch(shortcut)) {
+    private fun openShortcut(entry: HomeEntry): Boolean {
+        Log.i(TAG, "Opening the shortcut ${entry.label}")
+        val opened = when (entry) {
+            is PinnedShortcut -> launcherModel.launch(entry)
+            is LauncherApp -> try {
+                launcherModel.launch(entry)
+                true
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Can't launch ${entry.component}", e)
+                false
+            } catch (e: IllegalStateException) {
+                Log.w(TAG, "Can't launch ${entry.component}", e)
+                false
+            }
+        }
+        if (!opened) {
             // Removed since the column was built
             loadShortcuts()
             return false
         }
-        // As for the media panel: only the user's choice and the fixed list
-        if (HomeButtonApps(context).shouldShow(shortcut.packageName, detected = false)) {
+        // A shortcut, as for the media panel, goes by the user's choice and
+        // the fixed list only: the detection reads an app's launcher entry
+        val detected = (entry as? LauncherApp)?.wantsLightStatusBar ?: false
+        if (HomeButtonApps(context).shouldShow(entry.packageName, detected)) {
             HomeButtonService.show(context)
         }
         return true
@@ -922,7 +946,7 @@ class SlideshowController(
         val shortcut = (0 until shortcutsColumn.childCount)
             .map { shortcutsColumn.getChildAt(it) }
             .firstOrNull { e.lands(it) }
-            ?.tag as? PinnedShortcut
+            ?.tag as? HomeEntry
         when {
             shortcut != null && openShortcut(shortcut) -> return
             e.lands(nowPlayingPanel) && openMediaApp() -> return
