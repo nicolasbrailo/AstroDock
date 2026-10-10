@@ -246,8 +246,14 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   progress" without one) is shown like a text announcement with no timeout,
   and when it ends, `EndAnnouncement` gives it 10 more seconds. That only
   applies if it is still the announcement on screen, which the `owner` token
-  settles: anything announced in the meantime is newer and stays. One that can't be fetched or played says why as a 30s
-  text announcement, which only shows if a slideshow is on screen. Its own
+  settles: anything announced in the meantime is newer and stays. The
+  reporter keeps the announcement (`mqtt/Announcement.kt`, unit tested), and
+  each slideshow shows it as it appears, because another app can be in front
+  meanwhile: the doorbell's camera opens while its ring plays, and the end of
+  the ring used to be dropped with no slideshow to hear it, leaving the message
+  up for good once the camera closed. One that can't be fetched or played says
+  why as a 30s text announcement, which only shows if a slideshow is on screen
+  before the 30s are up. Its own
   playback makes `AudioManager.isMusicActive` true, which `NowPlaying` takes as
   proof that a session claiming to play really is, so a stale session can show
   in the media panel for as long as an announcement lasts. The homeboard's renderer commands
@@ -441,7 +447,7 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   lasts 15s; BatiDoorLink keeps the screen on itself while it plays. The URL
   carries the camera's password, so it is never logged. Without BatiDoorLink
   or a stream, the ring is a 60s text announcement, which only shows over a
-  slideshow. It ignores night hours and the call settings: someone is at the
+  slideshow, if one is on screen within the minute. It ignores night hours and the call settings: someone is at the
   door either way.
 - `alarm/`: alarms that start a media app, edited in the Alarms app:
   `AlarmsActivity.kt`, a launcher activity of ours with its own label and

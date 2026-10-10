@@ -121,6 +121,10 @@ class StateReporter private constructor(private val context: Context) {
     private var watchingPortal = false
     @Volatile
     private var alertListener: ((String?) -> Unit)? = null
+    // The text over the pictures, whether or not a slideshow is on screen to
+    // show it (see Announcement). Used on the main thread.
+    var announcement: Announcement? = null
+        private set
     private var settings: MqttSettings? = null
     private var connectWatchdog: Job? = null
     // Checking the prefix and then connecting (see checkPrefix)
@@ -885,6 +889,16 @@ class StateReporter private constructor(private val context: Context) {
                     onStarted = { carryOut(Command.Announce(message, 0, owner)) },
                     onFinished = { carryOut(Command.EndAnnouncement(owner, ANNOUNCE_AUDIO_LINGER_SECONDS)) },
                 )
+            }
+            // Kept here first, so a slideshow that appears later shows it as
+            // it should be by then
+            is Command.Announce -> {
+                announcement = Announcement.of(command.message, command.timeoutSeconds, command.owner, SystemClock.elapsedRealtime())
+                commandListener?.invoke(command)
+            }
+            is Command.EndAnnouncement -> {
+                announcement = Announcement.ending(announcement, command.owner, command.afterSeconds, SystemClock.elapsedRealtime())
+                commandListener?.invoke(command)
             }
             else -> {
                 val listener = commandListener

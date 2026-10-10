@@ -169,9 +169,6 @@ class SlideshowController(
     private val reporterSource = if (interactive) StateReporter.HOME else StateReporter.SCREENSAVER
     private val announcement: TextView = root.findViewById(R.id.announcement)
     private var announcementJob: Job? = null
-    // Who put up the announcement on screen, so they can take down their own
-    // without taking down whatever replaced it
-    private var announcementOwner: Any? = null
     private val onCommand: (Command) -> Unit = { carryOut(it) }
     // Whatever is wrong with the broker, in a corner of the home screen
     private val alert: TextView = root.findViewById(R.id.alert)
@@ -248,6 +245,8 @@ class SlideshowController(
         started = true
         // Commands go to whichever slideshow is on screen
         reporter.setCommandListener(onCommand)
+        // Whatever was announced or ended while it wasn't on screen
+        showAnnouncement()
         // The screensaver is what runs all night, with nobody looking, so it
         // isn't the place to complain about the broker
         if (interactive) reporter.setAlertListener(onAlert)
@@ -607,8 +606,7 @@ class SlideshowController(
             }
             is Command.TransitionSeconds -> setTransitionSeconds(command.seconds)
             is Command.SetAlbumFilter -> setAlbumFilter(command.filter)
-            is Command.Announce -> announce(command.message, command.timeoutSeconds, command.owner)
-            is Command.EndAnnouncement -> endAnnouncement(command.owner, command.afterSeconds)
+            is Command.Announce, is Command.EndAnnouncement -> showAnnouncement()
             else -> Unit // Screen commands: the reporter deals with those
         }
     }
@@ -648,32 +646,22 @@ class SlideshowController(
         Log.i(TAG, "Album filter: $filter")
     }
 
-    // Shows a message over the pictures. An empty message clears it, and a
-    // timeout of 0 leaves it up until something else replaces it.
-    private fun announce(message: String, timeoutSeconds: Int, owner: Any? = null) {
+    // Shows the reporter's announcement, which it keeps while no slideshow is
+    // on screen too, so this runs as the slideshow appears as well as when
+    // the announcement changes
+    private fun showAnnouncement() {
         announcementJob?.cancel()
-        announcementOwner = owner
-        if (message.isBlank()) {
+        val now = SystemClock.elapsedRealtime()
+        val shown = reporter.announcement?.takeIf { it.visibleAt(now) }
+        if (shown == null) {
             announcement.visibility = View.GONE
             return
         }
-        announcement.text = message
+        announcement.text = shown.message
         announcement.visibility = View.VISIBLE
-        if (timeoutSeconds > 0) {
-            announcementJob = scope.launch {
-                delay(timeoutSeconds * 1000L)
-                announcement.visibility = View.GONE
-            }
-        }
-    }
-
-    // Starts the countdown on an announcement that was put up with none, if it
-    // is still on screen. Whatever was announced since is newer, so it stays.
-    private fun endAnnouncement(owner: Any, afterSeconds: Int) {
-        if (owner !== announcementOwner || announcement.visibility != View.VISIBLE) return
-        announcementJob?.cancel()
+        val until = shown.until ?: return
         announcementJob = scope.launch {
-            delay(afterSeconds * 1000L)
+            delay(until - now)
             announcement.visibility = View.GONE
         }
     }
