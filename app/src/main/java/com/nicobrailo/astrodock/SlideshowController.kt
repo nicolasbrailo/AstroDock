@@ -6,6 +6,7 @@ import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Rect
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import android.util.TypedValue
@@ -758,6 +759,10 @@ class SlideshowController(
         val night = state.nightRuleApplies(context, now)
         setDark(night)
         if (!night || !mayLock) return
+        // After a lock the system starts the screensaver with the screen still
+        // off, and its checks carry on there: locking again would do nothing
+        // but log a line every 30s all night
+        if (context.getSystemService(PowerManager::class.java)?.isInteractive == false) return
 
         val wallNow = System.currentTimeMillis()
         val portal = PortalLog.presence.takeIf { PortalLog.isReading }

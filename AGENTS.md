@@ -874,7 +874,10 @@ nothing an app can reach stops that:
   say) it falls back to locking at most every 10 minutes
   (`NIGHT_RELOCK_MILLIS`, timed from `SlideshowState.lastNightLockAt`, which
   survives the handover to a new screensaver), by when whoever woke it may
-  have gone. Locking again on every wake, as the first version did, made the
+  have gone. The check skips the lock while the screen is already
+  off (`PowerManager.isInteractive`): after a lock the system starts the
+  screensaver with the screen off, and its checks carry on there, which
+  logged a pointless lock every 30s all night (measured 2026-10-27). Locking again on every wake, as the first version did, made the
   pictures blink on and off all night.
 Both need the device admin: without it the rule does nothing, matching the
 greyed out setting. Changing these settings doesn't disturb the pictures: only
