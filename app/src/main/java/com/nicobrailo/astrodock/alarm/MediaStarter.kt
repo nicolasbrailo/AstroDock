@@ -160,6 +160,16 @@ class MediaStarter(context: Context) {
     private val MediaController.isRemote: Boolean
         get() = playbackInfo?.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_REMOTE
 
+    // Pauses the app if it is playing here, for an alarm that turns itself
+    // off. Whether it did is only known by asking isPlaying again later.
+    fun pause(packageName: String): Boolean {
+        if (!isPlaying(packageName)) return false
+        val controller = session(packageName) ?: return false
+        Log.i(TAG, "Pausing $packageName")
+        controller.transportControls.pause()
+        return true
+    }
+
     // Moves a session that is paused on another device to this one. Spotify
     // does that by itself when told to play from here: measured on a Portal+,
     // 2026-10-04, with its Connect session paused on another device for a

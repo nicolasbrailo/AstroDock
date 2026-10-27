@@ -129,6 +129,27 @@
                 android:text="@string/alarm_volume_hint"
                 android:textSize="14sp" />
 
+            <TextView
+                android:id="@+id/stop_after_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:textSize="14sp" />
+
+            <!-- In steps of Alarm.STOP_AFTER_STEP minutes; AlarmsFragment
+                 sets its max -->
+            <SeekBar
+                android:id="@+id/stop_after"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="48dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/alarm_stop_after_hint"
+                android:textSize="14sp" />
+
             <Button
                 android:id="@+id/test"
                 style="?attr/materialButtonOutlinedStyle"

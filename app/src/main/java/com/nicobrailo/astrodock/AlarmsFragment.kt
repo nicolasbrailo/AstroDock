@@ -234,6 +234,27 @@ class AlarmsFragment : Fragment() {
             })
         }
 
+        val stopAfterLabel = view.findViewById<TextView>(R.id.stop_after_label)
+        fun showStopAfter(minutes: Int) {
+            stopAfterLabel.text = if (minutes == 0) {
+                getString(R.string.alarm_stop_after_never)
+            } else {
+                getString(R.string.alarm_stop_after, minutes)
+            }
+        }
+        val stopAfter = view.findViewById<SeekBar>(R.id.stop_after).apply {
+            max = Alarm.STOP_AFTER_RANGE.last / Alarm.STOP_AFTER_STEP
+            progress = (alarm.stopAfterMinutes + Alarm.STOP_AFTER_STEP / 2) / Alarm.STOP_AFTER_STEP
+            showStopAfter(progress * Alarm.STOP_AFTER_STEP)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar, value: Int, fromUser: Boolean) {
+                    showStopAfter(value * Alarm.STOP_AFTER_STEP)
+                }
+                override fun onStartTrackingTouch(bar: SeekBar) = Unit
+                override fun onStopTrackingTouch(bar: SeekBar) = Unit
+            })
+        }
+
         fun edited() = alarm.copy(
             enabled = existing?.enabled ?: true,
             hour = time.hour,
@@ -244,6 +265,7 @@ class AlarmsFragment : Fragment() {
             playTitle = choices.getOrNull(play.selectedItemPosition)?.title.orEmpty(),
             shuffle = shuffle.isChecked,
             volume = volume.progress,
+            stopAfterMinutes = stopAfter.progress * Alarm.STOP_AFTER_STEP,
         )
 
         // Saved first, like Save does, so what is tested is what will ring:

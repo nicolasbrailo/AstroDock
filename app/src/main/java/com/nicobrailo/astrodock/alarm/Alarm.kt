@@ -11,6 +11,8 @@ import java.time.ZonedDateTime
 // `play` is what to ask it for (see PlayRequest), empty to carry on with
 // whatever it played last. `days` empty means once, after which the alarm
 // switches itself off. `volume` is the media volume to set, in percent.
+// `stopAfterMinutes` is how long after ringing the alarm turns itself off
+// (AlarmRinger.turnOff), 0 for never.
 data class Alarm(
     val id: String,
     val enabled: Boolean = true,
@@ -24,6 +26,7 @@ data class Alarm(
     val playTitle: String = "",
     val shuffle: Boolean = true,
     val volume: Int = DEFAULT_VOLUME,
+    val stopAfterMinutes: Int = DEFAULT_STOP_AFTER_MINUTES,
 ) {
     val time: String get() = "%02d:%02d".format(hour, minute)
     val once: Boolean get() = days.isEmpty()
@@ -31,6 +34,10 @@ data class Alarm(
     companion object {
         const val DEFAULT_VOLUME = 30
         val VOLUME_RANGE = 0..100
+        const val DEFAULT_STOP_AFTER_MINUTES = 30
+        // The editor's slider moves in steps of this many minutes
+        const val STOP_AFTER_STEP = 5
+        val STOP_AFTER_RANGE = 0..120
     }
 }
 

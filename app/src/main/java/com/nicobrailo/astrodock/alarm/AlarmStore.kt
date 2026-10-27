@@ -10,7 +10,8 @@ import java.time.DayOfWeek
 // Saves the alarms in their own SharedPreferences file, as JSON:
 // [{"id": ..., "enabled": true, "hour": 8, "minute": 0, "days": [1, 2, ...],
 //   "app": "com.spotify.music", "play": "spotify:playlist:...",
-//   "play_title": "Deep Focus", "shuffle": true, "volume": 30}]
+//   "play_title": "Deep Focus", "shuffle": true, "volume": 30,
+//   "stop_after_minutes": 30}]
 // Days are ISO numbers, Monday 1 to Sunday 7; "app" is absent for the alarm
 // sound alone.
 class AlarmStore(context: Context) {
@@ -34,6 +35,8 @@ class AlarmStore(context: Context) {
                     playTitle = obj.optString("play_title"),
                     shuffle = obj.optBoolean("shuffle", true),
                     volume = obj.optInt("volume", Alarm.DEFAULT_VOLUME).coerceIn(Alarm.VOLUME_RANGE),
+                    stopAfterMinutes = obj.optInt("stop_after_minutes", Alarm.DEFAULT_STOP_AFTER_MINUTES)
+                        .coerceIn(Alarm.STOP_AFTER_RANGE),
                 )
             }
         } catch (e: JSONException) {
@@ -62,6 +65,7 @@ class AlarmStore(context: Context) {
                     .put("play_title", alarm.playTitle)
                     .put("shuffle", alarm.shuffle)
                     .put("volume", alarm.volume)
+                    .put("stop_after_minutes", alarm.stopAfterMinutes)
             )
         }
         prefs.edit().putString(KEY, array.toString()).commit()

@@ -258,6 +258,9 @@
     <string name="alarm_shuffle">Shuffle</string>
     <string name="alarm_volume">Volume: %1$d%%</string>
     <string name="alarm_volume_hint">The music starts quiet and rises slowly to this volume over the first minute.</string>
+    <string name="alarm_stop_after">Turn off after: %1$d min</string>
+    <string name="alarm_stop_after_never">Turn off after: never</string>
+    <string name="alarm_stop_after_hint">If the alarm is still sounding by then, the alarm sound stops and the music it started is paused.</string>
     <string name="alarm_test">Test</string>
     <string name="alarm_days_once">Once</string>
     <string name="alarm_days_every_day">Every day</string>

@@ -460,8 +460,8 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   `res/layout/fragment_alarms.xml`, `item_alarm.xml`, `dialog_alarm.xml` and kept as JSON in their own preferences file
   (`AlarmStore`). An `Alarm` is a time, days (none means once, after which it
   switches itself off), an app (none means the alarm sound alone), what to
-  play (a URI and its name, empty for whatever the app played last), shuffle
-  and a media volume. What to play is picked from a list rather than typed:
+  play (a URI and its name, empty for whatever the app played last), shuffle,
+  a media volume and how long until it turns itself off. What to play is picked from a list rather than typed:
   `RecentPlaylists` notes every playlist, album, artist or show an app is seen
   playing from, with its name, from the session's metadata (Spotify's
   `com.spotify.music.extra.CONTEXT_URI` and `CONTEXT_TITLE`; nothing else is
@@ -499,6 +499,11 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   the device's alarm sound plays on the alarm stream at the device's alarm
   volume, looped, until the slideshow is touched (`SlideshowState.noteTouch`
   calls `AlarmRinger.silence`) or for 10 minutes, with why on screen. An
+  alarm turns itself off once its `stopAfterMinutes` are up (30 by default,
+  0 never, timed from the ring by a child of the ring's coroutine, so a new
+  alarm cancels it): the alarm sound stops and the music it started is
+  paused (`MediaStarter.pause`) if it still plays here. Music that was
+  already playing when it rang isn't the alarm's, so it is left alone. An
   alarm holds the night rule off for 30 minutes (`SlideshowState.noteAlarm`),
   like a touch does for 5, but isn't a touch, so the stuck-camera check
   doesn't count it as somebody seen.
@@ -839,7 +844,8 @@ privacy mode or its lens is covered.
 receiver or a play-from-search activity, plus "none, only the alarm sound"),
 what to play (whatever it played last, or a playlist it was seen playing), shuffle (default on) and
 a volume (default 30%), which the editor says the music rises to over the
-first minute. "Test" in the editor saves it, as Save does, and rings it at once; closing
+first minute, and when it turns itself off (0 to 120 minutes in steps of 5,
+default 30, 0 never). "Test" in the editor saves it, as Save does, and rings it at once; closing
 the editor stops the alarm sound, since no slideshow is there to touch.
 
 **Night screen off** (`SlideshowController.checkNight`). The night rule applies

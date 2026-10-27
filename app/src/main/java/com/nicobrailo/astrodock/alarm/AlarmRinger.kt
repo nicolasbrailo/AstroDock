@@ -36,7 +36,9 @@ import kotlinx.coroutines.launch
 // or for FALLBACK_MILLIS.
 //
 // The music itself is the app's to stop, from the media panel like any
-// other; the alarm lets go of it once it has started.
+// other; the alarm lets go of it once it has started, until the alarm's
+// stopAfterMinutes are up: then whatever the alarm still has sounding is
+// turned off (turnOff), for a morning nobody was there to hear it.
 //
 // One alarm at a time, on the main thread, in the main process: StateReporter
 // is what puts text on screen.
@@ -76,9 +78,21 @@ object AlarmRinger {
         silence()
         SlideshowState.shared.noteAlarm()
         job = scope.launch {
+            val packageName = alarm.app
+            // Whether the music playing then is the alarm's to stop. Set
+            // once the app was asked to play, and not when it was playing
+            // already, somebody listening.
+            var startedMusic = false
+            // A child of this job, so it outlives the rest of it, and another
+            // alarm ringing cancels it. The timer stops while the device
+            // sleeps, but nothing sounding lets it: the music keeps the CPU
+            // up, and so does the alarm sound's wake lock.
+            if (alarm.stopAfterMinutes > 0) launch {
+                delay(alarm.stopAfterMinutes * 60_000L)
+                turnOff(app, alarm, packageName.takeIf { startedMusic })
+            }
             wakeUp(app)
             StateReporter.get(app).refresh()
-            val packageName = alarm.app
             if (packageName == null) {
                 playFallback(app, app.getString(R.string.alarm_ringing_sound, alarm.time))
                 return@launch
@@ -89,7 +103,8 @@ object AlarmRinger {
             // Music already playing here is somebody listening, at the volume
             // they chose, so it is left alone. Otherwise it starts quiet and
             // rises to the alarm's volume once it plays (rampVolume).
-            val target = if (starter.isPlaying(packageName)) null else mediaIndex(app, alarm.volume)
+            val wasPlaying = starter.isPlaying(packageName)
+            val target = if (wasPlaying) null else mediaIndex(app, alarm.volume)
             // Put back if the music doesn't play here after all, rather than
             // leaving the device at the ramp's first step
             val before = app.getSystemService(AudioManager::class.java)?.getStreamVolume(AudioManager.STREAM_MUSIC)
@@ -112,6 +127,7 @@ object AlarmRinger {
                 playFallback(app, app.getString(R.string.alarm_app_failed, alarm.time, label))
                 return@launch
             }
+            startedMusic = !wasPlaying
             // Polled rather than checked once at the end, so an app that was
             // brought to the front can be sent back as soon as it plays
             val giveUpAt = SystemClock.elapsedRealtime() + CHECK_AFTER_MILLIS
@@ -180,6 +196,16 @@ object AlarmRinger {
         } catch (e: RuntimeException) {
             Log.w(TAG, "Can't go back to the home screen", e)
         }
+    }
+
+    // Ends an alarm that is still going when its stopAfterMinutes are up:
+    // the alarm sound, and the music in `packageName` if it still plays here.
+    // Music somebody stopped and started again since is paused too, there
+    // being no telling it apart.
+    private fun turnOff(context: Context, alarm: Alarm, packageName: String?) {
+        Log.i(TAG, "Alarm ${alarm.time}: ${alarm.stopAfterMinutes} minutes are up, turning it off")
+        silence()
+        if (packageName != null) MediaStarter(context).pause(packageName)
     }
 
     // Stops the alarm sound, if it is playing. The media app is left alone.
