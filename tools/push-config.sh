@@ -40,6 +40,12 @@ Usage: tools/push-config.sh [OPTION]...
                            name, add a comma and the region or country:
                            'Springfield, Illinois'. Or coordinates: '52.37, 4.89'.
                            The Slideshow tab shows what it was found as.
+  --weather-relay URL      The house's weather relay, asked before Open-Meteo
+                           (default http://10.0.0.10:4198/). An IP, not a name:
+                           Android ignores the house's DNS. '' for Open-Meteo
+                           directly
+  --weather-fallback BOOL  Ask Open-Meteo directly when the relay doesn't
+                           answer: true or false (default true)
 
   Where the device reports its state (see mqtt/MqttSettings.kt). The rest of
   the MQTT settings are only on the device's screen:
@@ -120,6 +126,8 @@ while [[ $# -gt 0 ]]; do
     --album-to-year) number "$2" "$1" 0 9999; set_pref album_to_year "$2"; shift 2 ;;
     --weather) boolean "$2" "$1"; set_pref weather_enabled "$2" bool; shift 2 ;;
     --weather-place) set_pref weather_place "$2"; shift 2 ;;
+    --weather-relay) set_pref weather_relay_url "$2"; shift 2 ;;
+    --weather-fallback) boolean "$2" "$1"; set_pref weather_relay_fallback "$2" bool; shift 2 ;;
     --mqtt-enabled) boolean "$2" "$1"; set_pref mqtt_enabled "$2" bool; shift 2 ;;
     --mqtt-host) set_pref mqtt_host "$2"; shift 2 ;;
     --mqtt-port) number "$2" "$1" 1 65535; set_pref mqtt_port "$2"; shift 2 ;;

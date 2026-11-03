@@ -1,9 +1,11 @@
 package com.nicobrailo.astrodock.weather
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONException
@@ -14,27 +16,66 @@ import java.util.concurrent.TimeUnit
 
 class WeatherException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
-// The current weather from Open-Meteo (https://open-meteo.com), and the place
-// names it is asked about, from Open-Meteo's geocoder. Neither needs an account
-// or an API key, so the only settings are the toggle and the place.
-// Every failure is a WeatherException; the caller hides the panel rather than
-// saying so on screen, since the pictures are the point.
+// What current() found, and, when the relay didn't answer and Open-Meteo did
+// instead, why not: the weather is still right, but the relay is broken and
+// someone should hear about it.
+data class CurrentWeather(val weather: Weather, val relayError: String? = null)
+
+// The relay's report for `place`, at <relay>/weather/<lat>/<lon>. Resolved
+// against the setting rather than appended to it, so the relay's address works
+// with or without a trailing slash, or as the address of its page
+// (http://10.0.0.10:4198/index.html). Null if the setting isn't an http(s) URL.
+// `client` names this device in the relay's list of recent clients.
+fun relayWeatherUrl(relay: String, place: Place, client: String?): HttpUrl? {
+    val base = relay.trim().toHttpUrlOrNull() ?: return null
+    val url = base.resolve("/weather/${place.latitude}/${place.longitude}") ?: return null
+    if (client.isNullOrBlank()) return url
+    return url.newBuilder().addQueryParameter("client", client).build()
+}
+
+// The current weather, from the house's weather relay (zmw_meteo_relay, a cache
+// in front of Open-Meteo that answers with Open-Meteo's own JSON) or straight
+// from Open-Meteo (https://open-meteo.com), and the place names it is asked
+// about, always from Open-Meteo's geocoder. Neither needs an account or an API
+// key. Every failure is a WeatherException; the caller hides the panel rather
+// than saying so on screen, since the pictures are the point.
 class WeatherClient {
     private val http = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .build()
 
-    suspend fun current(place: Place): Weather {
-        // Celsius is the default, so no unit is asked for. `timezone=auto` only
-        // decides how the reply dates its readings, which nothing here reads,
-        // but without it "current" is dated in UTC and looks wrong in the log.
-        val url = FORECAST_URL.toHttpUrl().newBuilder()
-            .addQueryParameter("latitude", place.latitude.toString())
-            .addQueryParameter("longitude", place.longitude.toString())
-            .addQueryParameter("current", "$FIELD_TEMPERATURE,$FIELD_CODE")
-            .addQueryParameter("timezone", "auto")
-            .build()
+    // From the relay at `relay` when there is one (blank: none), and from
+    // Open-Meteo directly when there isn't, or when the relay fails and
+    // `fallback` allows it. Without the fallback a broken relay means no
+    // weather, which is the point of turning it off: the failure shows.
+    suspend fun current(place: Place, relay: String, fallback: Boolean, client: String?): CurrentWeather {
+        if (relay.isBlank()) return CurrentWeather(currentFrom(openMeteoUrl(place)))
+        val relayError = try {
+            val url = relayWeatherUrl(relay, place, client)
+                ?: throw WeatherException("Weather relay \"$relay\" is not an http URL")
+            return CurrentWeather(currentFrom(url))
+        } catch (e: WeatherException) {
+            if (!fallback) throw e
+            e.message.orEmpty()
+        }
+        Log.w(TAG, "Weather relay failed, asking Open-Meteo instead: $relayError")
+        return CurrentWeather(currentFrom(openMeteoUrl(place)), relayError)
+    }
+
+    // Celsius is the default, so no unit is asked for. `timezone=auto` only
+    // decides how the reply dates its readings, which nothing here reads, but
+    // without it "current" is dated in UTC and looks wrong in the log. The
+    // relay asks for both fields too, among many others.
+    private fun openMeteoUrl(place: Place): HttpUrl = FORECAST_URL.toHttpUrl().newBuilder()
+        .addQueryParameter("latitude", place.latitude.toString())
+        .addQueryParameter("longitude", place.longitude.toString())
+        .addQueryParameter("current", "$FIELD_TEMPERATURE,$FIELD_CODE")
+        .addQueryParameter("timezone", "auto")
+        .build()
+
+    // The relay answers with Open-Meteo's JSON, so both are read the same way
+    private suspend fun currentFrom(url: HttpUrl): Weather {
         val current = get(url).optJSONObject("current")
             ?: throw WeatherException("GET $url: no \"current\" in the response")
 
@@ -101,6 +142,7 @@ class WeatherClient {
     }
 
     companion object {
+        private const val TAG = "WeatherClient"
         private const val FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
         private const val GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
         private const val FIELD_TEMPERATURE = "temperature_2m"

@@ -18,10 +18,16 @@ import java.time.ZoneId
 //
 // setAlarmClock rather than setExact: it is the one that wakes the device on
 // time whatever doze thinks, and an alarm clock is what this is.
+//
+// An alarm for an app in Warmup.APPS has a second system alarm, a minute
+// before it, which opens the app ahead of time (AlarmWarmup). It is set with
+// the first and on the same occasions, and says which alarm it is for the
+// same way.
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
             ACTION_RING -> ring(context, intent.getLongExtra(EXTRA_AT, 0))
+            ACTION_WARM -> warm(context, intent.getLongExtra(EXTRA_AT, 0))
             Intent.ACTION_BOOT_COMPLETED,
             Intent.ACTION_TIME_CHANGED,
             Intent.ACTION_TIMEZONE_CHANGED -> schedule(context)
@@ -45,9 +51,19 @@ class AlarmReceiver : BroadcastReceiver() {
         schedule(context)
     }
 
+    private fun warm(context: Context, at: Long) {
+        val alarm = AlarmSchedule.due(AlarmStore(context).load(), at, ZoneId.systemDefault()).firstOrNull()
+        if (alarm == null) {
+            Log.w(TAG, "Woken to warm up for an alarm at ${Instant.ofEpochMilli(at)} that no longer exists")
+            return
+        }
+        AlarmWarmup.warm(context, alarm)
+    }
+
     companion object {
         private const val TAG = "AlarmReceiver"
         private const val ACTION_RING = "com.nicobrailo.astrodock.alarm.RING"
+        private const val ACTION_WARM = "com.nicobrailo.astrodock.alarm.WARM"
         // When it was scheduled for, which says which alarms it is for
         private const val EXTRA_AT = "at"
 
@@ -59,9 +75,11 @@ class AlarmReceiver : BroadcastReceiver() {
             val next = AlarmSchedule.soonest(AlarmStore(context).load(), System.currentTimeMillis(), ZoneId.systemDefault())
             if (next == null) {
                 alarmManager.cancel(ringIntent(context, 0))
+                alarmManager.cancel(warmIntent(context, 0))
                 return
             }
             val (alarm, at) = next
+            scheduleWarmup(alarmManager, context, alarm, at)
             // What the system opens from its own alarm icon, where it shows one
             val show = PendingIntent.getActivity(
                 context,
@@ -78,12 +96,36 @@ class AlarmReceiver : BroadcastReceiver() {
             }
         }
 
+        // Exact and allowed while idle rather than an alarm clock, which
+        // would show the system's alarm icon for the wrong time. Not for an
+        // alarm less than a minute away, whose minute has already begun.
+        private fun scheduleWarmup(alarmManager: AlarmManager, context: Context, alarm: Alarm, at: Long) {
+            val warmAt = at - Warmup.LEAD_MILLIS
+            if (alarm.app !in Warmup.APPS || warmAt <= System.currentTimeMillis()) {
+                alarmManager.cancel(warmIntent(context, 0))
+                return
+            }
+            try {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, warmAt, warmIntent(context, at))
+            } catch (e: SecurityException) {
+                Log.w(TAG, "Not allowed to set the warm up for ${alarm.time}", e)
+            }
+        }
+
         // One request code for all of them, so scheduling replaces what was
         // scheduled before
         private fun ringIntent(context: Context, at: Long): PendingIntent = PendingIntent.getBroadcast(
             context,
             0,
             Intent(context, AlarmReceiver::class.java).setAction(ACTION_RING).putExtra(EXTRA_AT, at),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        // Another request code and action, so it doesn't replace the ring
+        private fun warmIntent(context: Context, at: Long): PendingIntent = PendingIntent.getBroadcast(
+            context,
+            1,
+            Intent(context, AlarmReceiver::class.java).setAction(ACTION_WARM).putExtra(EXTRA_AT, at),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
     }

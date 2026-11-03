@@ -86,6 +86,16 @@ class SettingsActivity : AppCompatActivity() {
             numberPreference(Settings.KEY_ALBUM_FROM_YEAR, Settings.YEAR_RANGE)
             numberPreference(Settings.KEY_ALBUM_TO_YEAR, Settings.YEAR_RANGE)
             placePreference()
+
+            findPreference<EditTextPreference>(Settings.KEY_WEATHER_RELAY_URL)?.apply {
+                setOnBindEditTextListener {
+                    it.inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+                }
+                setSummaryProvider { pref ->
+                    (pref as EditTextPreference).text?.trim()?.takeIf { it.isNotEmpty() }
+                        ?: getString(R.string.settings_weather_relay_url_not_set)
+                }
+            }
         }
 
         // The night rule can only turn the screen off with the device admin,

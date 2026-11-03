@@ -65,8 +65,18 @@ class MediaStarter(context: Context) {
         object Elsewhere : Result
     }
 
+    // How start() went about it, for the alarm's report: "link", "session",
+    // "play_key" or "search_activity". Null until it got that far.
+    var path: String? = null
+        private set
+    // Whether the app had a media session when start() was called, null when
+    // the sessions can't be read
+    var hadSession: Boolean? = null
+        private set
+
     // Runs on the main thread, and takes up to SESSION_WAIT_MILLIS
     suspend fun start(packageName: String, request: PlayRequest, shuffle: Boolean): Result {
+        hadSession = if (canReadSessions(context)) session(packageName) != null else null
         // Somebody listening here is left alone; otherwise the song the alarm
         // resumes starts from the beginning rather than where it was paused
         val wasPlayingHere = isPlaying(packageName)
@@ -80,14 +90,18 @@ class MediaStarter(context: Context) {
             pullHere(packageName, remote)
         }
         val view = (request as? PlayRequest.Uri)?.let { viewIntent(packageName, it) }
-        if (view != null) return startFromLink(packageName, view, shuffle)
+        if (view != null) {
+            path = "link"
+            return startFromLink(packageName, view, shuffle)
+        }
 
+        path = "session"
         var controller = session(packageName)
         if (controller == null) {
             Log.i(TAG, "$packageName has no media session, waking it")
             val opened = when {
-                sendPlayKey(packageName) -> false
-                playFromSearchActivity(packageName, request) -> true
+                sendPlayKey(packageName) -> false.also { path = "play_key" }
+                playFromSearchActivity(packageName, request) -> true.also { path = "search_activity" }
                 else -> return Result.Failed("$packageName can't be started from the background")
             }
             if (!canReadSessions(context)) {
@@ -102,8 +116,10 @@ class MediaStarter(context: Context) {
         when (request) {
             PlayRequest.Resume -> {
                 Log.i(TAG, "Asking $packageName to play")
-                if (!wasPlayingHere) transport.seekTo(0)
-                if (controller.playbackState?.state != PlaybackState.STATE_PLAYING) transport.play()
+                if (!wasPlayingHere) {
+                    transport.seekTo(0)
+                    forcePlay(controller)
+                }
             }
             is PlayRequest.Uri -> {
                 Log.i(TAG, "Asking $packageName to play ${request.uri}")
@@ -160,6 +176,32 @@ class MediaStarter(context: Context) {
     private val MediaController.isRemote: Boolean
         get() = playbackInfo?.playbackType == MediaController.PlaybackInfo.PLAYBACK_TYPE_REMOTE
 
+    // Asks the app to play again, for an alarm whose music hasn't started a
+    // while after start(): Spotify opened under a screensaver stays paused,
+    // and a session can be stuck claiming to play. Remote sessions are left
+    // to the check that follows. False if there was no session to ask.
+    fun nudge(packageName: String): Boolean {
+        val controller = session(packageName)?.takeIf { !it.isRemote } ?: return false
+        Log.i(TAG, "$packageName isn't playing yet, asking again")
+        forcePlay(controller)
+        return true
+    }
+
+    // Plays even when the session says it is playing already, which the
+    // caller has found it isn't, as far as the speakers can tell: a session
+    // that believes it plays may take Play as nothing to do, so it is paused
+    // first, which any player understands.
+    private fun forcePlay(controller: MediaController) {
+        val transport = controller.transportControls
+        if (controller.playbackState?.state == PlaybackState.STATE_PLAYING) {
+            Log.i(TAG, "${controller.packageName} claims to be playing but isn't heard, pausing it first")
+            transport.pause()
+        }
+        transport.play()
+    }
+
+    fun hasSession(packageName: String): Boolean = session(packageName) != null
+
     // Pauses the app if it is playing here, for an alarm that turns itself
     // off. Whether it did is only known by asking isPlaying again later.
     fun pause(packageName: String): Boolean {
@@ -191,8 +233,8 @@ class MediaStarter(context: Context) {
         Log.w(TAG, "$packageName stayed on the other device")
     }
 
-    private suspend fun waitForSession(packageName: String): MediaController? {
-        val giveUpAt = SystemClock.elapsedRealtime() + SESSION_WAIT_MILLIS
+    suspend fun waitForSession(packageName: String, waitMillis: Long = SESSION_WAIT_MILLIS): MediaController? {
+        val giveUpAt = SystemClock.elapsedRealtime() + waitMillis
         while (SystemClock.elapsedRealtime() < giveUpAt) {
             session(packageName)?.let { return it }
             delay(POLL_MILLIS)

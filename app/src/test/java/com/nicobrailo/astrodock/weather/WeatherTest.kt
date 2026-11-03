@@ -149,3 +149,34 @@ class PlaceLabelTest {
         assertEquals("Luxembourg", placeLabel("Luxembourg", "", "Luxembourg"))
     }
 }
+
+class RelayWeatherUrlTest {
+    private val home = Place(51.5428743, -0.1289942, "Home")
+
+    private fun url(relay: String, client: String? = null) = relayWeatherUrl(relay, home, client)?.toString()
+
+    @Test
+    fun `the relay's address works with or without a slash, or as its page`() {
+        val expected = "http://10.0.0.10:4198/weather/51.5428743/-0.1289942"
+        assertEquals(expected, url("http://10.0.0.10:4198"))
+        assertEquals(expected, url("http://10.0.0.10:4198/"))
+        assertEquals(expected, url("http://10.0.0.10:4198/index.html"))
+        assertEquals(expected, url("  http://10.0.0.10:4198/  "))
+    }
+
+    @Test
+    fun `the client is named in the query`() {
+        assertEquals(
+            "http://10.0.0.10:4198/weather/51.5428743/-0.1289942?client=portaloft%20go",
+            url("http://10.0.0.10:4198/", "portaloft go"),
+        )
+        assertEquals("http://10.0.0.10:4198/weather/51.5428743/-0.1289942", url("http://10.0.0.10:4198/", ""))
+    }
+
+    @Test
+    fun `anything but an http URL is no relay`() {
+        assertNull(url("10.0.0.10:4198"))
+        assertNull(url("weather.casa"))
+        assertNull(url("ftp://10.0.0.10/"))
+    }
+}

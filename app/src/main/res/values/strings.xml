@@ -28,6 +28,17 @@
 
     <string name="slideshow_not_configured">Tap the screen, then the settings button, to set the Immich server URL and API key.</string>
     <string name="slideshow_loading">Loading pictures…</string>
+    <string name="night_status_lock_in">Night mode active, screen will turn off in %1$ds</string>
+    <string name="night_status_someone_seen">Night mode active, the screen stays on while the camera sees somebody</string>
+    <string name="night_status_woken">Woken by %1$s at %2$s</string>
+    <string name="night_status_kept_on">Kept on by %1$s, last at %2$s</string>
+    <string name="night_status_woken_unknown">Woken by: unknown, the Portal\'s log can\'t be read</string>
+    <string name="night_status_woken_none">Woken by: unknown, no wake in the Portal\'s log</string>
+    <string name="night_wake_presence">the camera seeing somebody</string>
+    <string name="night_wake_button">a button</string>
+    <string name="night_wake_screensaver_end">the screensaver ending</string>
+    <string name="night_wake_app">an app (%1$s)</string>
+    <string name="night_wake_touch">a touch</string>
     <string name="mqtt_alert_connect">Can\'t reach the MQTT broker at %1$s:%2$d\n%3$s</string>
     <string name="presence_stuck">The Portal\'s camera presence detection seems to have stopped: it hasn\'t seen anybody in over 5 minutes of the screen being used.\nRestart the Portal if the screen stops waking up when somebody comes in.</string>
     <string name="mqtt_alert_no_answer">No answer from the MQTT broker at %1$s:%2$d\nSomething is listening there, but it isn\'t answering as a broker. Check the port.</string>
@@ -116,6 +127,11 @@
     <string name="settings_weather_place_not_set">Not set</string>
     <string name="settings_weather_place_looking_up">Looking up %1$s…</string>
     <string name="settings_weather_place_not_found">Found no place called %1$s</string>
+    <string name="settings_weather_relay_url">Weather relay</string>
+    <string name="settings_weather_relay_url_hint">Address of the house\'s weather relay, asked before Open-Meteo, e.g. http://10.0.0.10:4198/. Use an IP: names from the house\'s own DNS don\'t work here. Leave empty to ask Open-Meteo directly.</string>
+    <string name="settings_weather_relay_url_not_set">Not set: asking Open-Meteo directly</string>
+    <string name="settings_weather_relay_fallback">Fall back to Open-Meteo</string>
+    <string name="settings_weather_relay_fallback_hint">When the relay doesn\'t answer, ask Open-Meteo directly. The relay\'s failure is still reported over MQTT.</string>
     <string name="settings_weather_place_failed">Couldn\'t look up %1$s just now. The slideshow will try again.</string>
 
     <string name="settings_category_screen">Screen</string>

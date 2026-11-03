@@ -22,7 +22,8 @@ it up to date when the design changes.
   (`--server-url`, `--api-key`, `--max-pictures`, `--percent`,
   `--slide-seconds`, the album filter's `--album-include`,
   `--album-exclude`, `--album-from-year`, `--album-to-year`, the weather's
-  `--weather` and `--weather-place`, and the broker's
+  `--weather`, `--weather-place`, `--weather-relay` and `--weather-fallback`,
+  and the broker's
   `--mqtt-enabled`, `--mqtt-host`, `--mqtt-port` and `--mqtt-audio-announce`,
   and the calls' `--calls-enabled`, which also grants or revokes the camera
   and the microphone, `--calls-allowed`, `--calls-auto-answer` and
@@ -188,7 +189,19 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
 - `weather/Weather.kt`, `weather/WeatherClient.kt`, `weather/PlaceCache.kt`:
   the current temperature and sky, over the clock. Open-Meteo
   (https://open-meteo.com) needs no account and no API key, and nor does its
-  geocoder, so the only settings are the toggle and a place name. The name is
+  geocoder, so the only settings are the toggle, a place name and the relay.
+  The weather is asked first of the house's weather relay (zmw_meteo_relay in
+  zigbee2mqtt2web: one cache in front of Open-Meteo for every weather client in
+  the house), at `<relay>/weather/<lat>/<lon>?client=<mqtt prefix>`; it answers
+  with Open-Meteo's own JSON, so both are read the same way. The relay setting
+  defaults to `http://10.0.0.10:4198/` and is an IP on purpose: Android doesn't
+  use the house's own DNS, so a name like `weather.casa` doesn't resolve. Blank
+  means no relay. `relayWeatherUrl` resolves `/weather/...` against it, so the
+  address works with or without a slash or as its page (`.../index.html`). When
+  the relay fails, Open-Meteo is asked directly if the fallback setting is on
+  (the default); the panel is then right but the relay's failure still goes in
+  the `weather` error of the state report, so a broken relay doesn't go
+  unnoticed. The geocoder is always Open-Meteo's: the relay doesn't proxy it. The name is
   looked up once and kept in `PlaceCache` (its own preferences file, since it is
   derived from a setting rather than being one), and asked again only when the
   name changes, so the weather carries on while the geocoder is down. Text that
@@ -206,7 +219,8 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   a cloud. `millisToNextHour` is what makes it refresh on the hour rather than
   an hour after the slideshow started, and works in the local zone because a
   few zones are offset by half an hour or three quarters of one. Both are pure
-  and unit tested; only the fetch and the JSON are not.
+  and unit tested, as is `relayWeatherUrl`; only the fetch and the JSON are
+  not.
 - `mqtt/StateReporter.kt`, `mqtt/MqttSettings.kt`, `mqtt/Occupancy.kt`, `mqtt/DeviceState.kt` +
   `MqttSettingsFragment.kt`, `res/xml/mqtt_preferences.xml`: publishes what the
   device is doing to an MQTT broker, on the topics of the homeboard bridge
@@ -323,6 +337,12 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   records each `lockNow()` with its reason), null for anything else);
   `call` (`state`: `idle`, `outgoing`, `incoming` or `in_call`; `with`, the
   other device's prefix; `since`);
+  `alarm`, how the last alarm went (`AlarmRinger.lastOutcome`, kept in the
+  alarms' preferences file so it outlives the process, null before the first:
+  `id`, `time`, `app`, `play`, `rang_at`, `warmup`, `had_session`, `path`,
+  `result`, `reason`, `playing_after_s` and `nudges`; `result` is null while
+  it rings, then `playing`, `silent`, `failed`, `elsewhere` or
+  `alarm_sound`; see `alarm/` below);
   `errors` (`[{source, message}]`, `immich`, `weather` and `presence`,
   cleared once they work again); `battery` (level, status, plugged, health, technology,
   temperature and voltage; `null` on a Portal without one); `wifi_rssi`;
@@ -494,6 +514,10 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   is left alone while it plays there, since somebody is listening, and the
   alarm sound plays instead ("Spotify is playing on another device"); paused
   there, it is told to play from here, which moves it here (`pullHere`).
+  While it isn't heard it is asked again every 10s (`MediaStarter.nudge`),
+  paused first if its session claims to be playing already (`forcePlay`,
+  which the resume path uses too), since such a session may take Play as
+  nothing to do.
   If it isn't audibly playing on this device within 30s (remote playback
   doesn't count, unlike in the media panel), or couldn't be started,
   the device's alarm sound plays on the alarm stream at the device's alarm
@@ -507,6 +531,17 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   alarm holds the night rule off for 30 minutes (`SlideshowState.noteAlarm`),
   like a touch does for 5, but isn't a touch, so the stuck-camera check
   doesn't count it as somebody seen.
+  A minute before an alarm for an app in `Warmup.APPS` (Spotify only), a
+  second system alarm (`setExactAndAllowWhileIdle`, so no alarm icon for the
+  wrong time) has `AlarmWarmup` open that app and press Home once its session
+  is up, under a partial wake lock. Spotify's process is usually killed
+  overnight, and a Play key from the background is a poor way to start it.
+  Opening it shows it on screen, so `Warmup.skipReason` (pure, unit tested)
+  skips it during a call, while music plays, while its session is already
+  there, and while somebody uses the device: the screen on with another app
+  in front, or a touch on the slideshow in the last 2 minutes. What it did is
+  the `alarm` record's `warmup`. Untested on a device so far: whether Spotify
+  opened with the screen off starts its session.
   `MediaStarter` does what Spotify allows, which is less than its session
   advertises (see the platform notes): a URI the app has an activity for is
   opened there (`PlayRequest.viewUri`, which turns a Spotify playlist, album,
@@ -858,8 +893,16 @@ nothing an app can reach stops that:
   stops moving pictures. MQTT reports the slideshow as not `active`. This is
   decided the moment a slideshow appears, before it reports anything, so a
   screen the Portal has just woken never shows a picture and never reports a
-  moment of `true`. A touch on the cover
-  brings the pictures back; in the screensaver a touch wakes to the home
+  moment of `true`. Over the cover, where the home screen's alert goes, a
+  line says the night rule applies and counts down to the check that will
+  switch the screen off (taking the camera as it is now), or says it stays
+  on while the camera sees somebody, and below that what last woke the
+  screen or kept it on, and when: the newest of `PortalLog`'s last wake,
+  the last touch and the camera's last report of somebody, which keeps the
+  screen on every 30s without waking it (unknown without the log); it
+  shows in the screensaver too, so a
+  device that stays on at night shows which half isn't working. A touch on
+  the cover brings the pictures back; in the screensaver a touch wakes to the home
   screen, which then isn't dark because of that touch.
 - **Off**: `lockNow()`, from the check that runs every 30s (the first 20s after
   the slideshow appears), when `ScreenControl.nightLockNow` (unit tested)

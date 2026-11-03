@@ -20,6 +20,7 @@ import com.nicobrailo.astrodock.ScreenControl
 import com.nicobrailo.astrodock.SlideshowState
 import com.nicobrailo.astrodock.audio.AnnouncementPlayer
 import com.nicobrailo.astrodock.mqtt.StateReporter
+import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -40,6 +41,9 @@ import kotlinx.coroutines.launch
 // stopAfterMinutes are up: then whatever the alarm still has sounding is
 // turned off (turnOff), for a morning nobody was there to hear it.
 //
+// How each alarm went is kept for the MQTT state (`alarm`, see lastOutcome),
+// since the morning it fails is a morning nobody was reading the log.
+//
 // One alarm at a time, on the main thread, in the main process: StateReporter
 // is what puts text on screen.
 object AlarmRinger {
@@ -53,6 +57,12 @@ object AlarmRinger {
     // app may need to start its process, then its session, then buffer.
     private const val CHECK_AFTER_MILLIS = 30_000L
     private const val POLL_MILLIS = 500L
+    // How often the app is asked to play again while it isn't heard
+    // (MediaStarter.nudge), within CHECK_AFTER_MILLIS
+    private const val NUDGE_MILLIS = 10_000L
+    // How long what AlarmWarmup did is taken to be about the alarm ringing,
+    // a minute after it
+    private const val WARMUP_FRESH_MILLIS = 5 * 60 * 1000L
     private const val REWAKE_MILLIS = 1_500L
     private const val MAX_REWAKES = 4
     private const val HOME_AFTER_MILLIS = 2_000L
@@ -77,6 +87,21 @@ object AlarmRinger {
         job?.cancel()
         silence()
         SlideshowState.shared.noteAlarm()
+        val rangAt = SystemClock.elapsedRealtime()
+        outcome = JSONObject()
+            .put("id", alarm.id)
+            .put("time", alarm.time)
+            .put("app", alarm.app ?: JSONObject.NULL)
+            .put("play", alarm.play)
+            .put("rang_at", System.currentTimeMillis() / 1000)
+            .put("warmup", takeWarmup(alarm) ?: JSONObject.NULL)
+            .put("had_session", JSONObject.NULL)
+            .put("path", JSONObject.NULL)
+            .put("result", JSONObject.NULL)
+            .put("reason", JSONObject.NULL)
+            .put("playing_after_s", JSONObject.NULL)
+            .put("nudges", 0)
+        report(app)
         job = scope.launch {
             val packageName = alarm.app
             // Whether the music playing then is the alarm's to stop. Set
@@ -94,6 +119,7 @@ object AlarmRinger {
             wakeUp(app)
             StateReporter.get(app).refresh()
             if (packageName == null) {
+                report(app, "result" to "alarm_sound")
                 playFallback(app, app.getString(R.string.alarm_ringing_sound, alarm.time))
                 return@launch
             }
@@ -113,13 +139,16 @@ object AlarmRinger {
                 if (target != null && before != null) setMediaIndex(app, before)
             }
             val result = starter.start(packageName, PlayRequest.parse(alarm.play), alarm.shuffle)
+            report(app, "had_session" to starter.hadSession, "path" to starter.path)
             if (result is MediaStarter.Result.Elsewhere) {
+                report(app, "result" to "elsewhere")
                 restoreVolume()
                 playFallback(app, app.getString(R.string.alarm_app_elsewhere, alarm.time, label))
                 return@launch
             }
             if (result is MediaStarter.Result.Failed) {
                 Log.w(TAG, "Alarm ${alarm.time}: ${result.reason}")
+                report(app, "result" to "failed", "reason" to result.reason)
                 restoreVolume()
                 // The app may have come to the front before it failed, and
                 // the message has to be seen
@@ -129,9 +158,20 @@ object AlarmRinger {
             }
             startedMusic = !wasPlaying
             // Polled rather than checked once at the end, so an app that was
-            // brought to the front can be sent back as soon as it plays
-            val giveUpAt = SystemClock.elapsedRealtime() + CHECK_AFTER_MILLIS
-            while (!starter.isPlaying(packageName) && SystemClock.elapsedRealtime() < giveUpAt) delay(POLL_MILLIS)
+            // brought to the front can be sent back as soon as it plays. One
+            // that is slow to start is asked again on the way, which is what
+            // gets Spotify going if it was opened under a screensaver.
+            val askedAt = SystemClock.elapsedRealtime()
+            val giveUpAt = askedAt + CHECK_AFTER_MILLIS
+            var nudgeAt = askedAt + NUDGE_MILLIS
+            var nudges = 0
+            while (!starter.isPlaying(packageName) && SystemClock.elapsedRealtime() < giveUpAt) {
+                delay(POLL_MILLIS)
+                if (SystemClock.elapsedRealtime() >= nudgeAt && !starter.isPlaying(packageName)) {
+                    if (starter.nudge(packageName)) report(app, "nudges" to ++nudges)
+                    nudgeAt += NUDGE_MILLIS
+                }
+            }
             val playing = starter.isPlaying(packageName)
             if ((result as MediaStarter.Result.Asked).openedApp) {
                 // A moment more, for the app to finish what it does on screen
@@ -140,10 +180,16 @@ object AlarmRinger {
             }
             if (playing) {
                 Log.i(TAG, "Alarm ${alarm.time}: $packageName is playing")
+                report(
+                    app,
+                    "result" to "playing",
+                    "playing_after_s" to (SystemClock.elapsedRealtime() - rangAt) / 1000,
+                )
                 // A child of this job, so another alarm ringing stops it
                 if (target != null) launch { rampVolume(app, target) }
             } else {
                 Log.w(TAG, "Alarm ${alarm.time}: $packageName isn't playing, sounding the alarm")
+                report(app, "result" to "silent")
                 restoreVolume()
                 playFallback(app, app.getString(R.string.alarm_app_silent, alarm.time, label))
             }
@@ -187,7 +233,7 @@ object AlarmRinger {
     // Opening a link brings the app to the front, over the pictures and the
     // alarm's line, so the home screen comes back once the music plays. Only
     // when that is us: on a device with another home screen the app stays.
-    private fun goHome(context: Context) {
+    fun goHome(context: Context) {
         val home = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
         val resolved = context.packageManager.resolveActivity(home, PackageManager.MATCH_DEFAULT_ONLY)
         if (resolved?.activityInfo?.packageName != context.packageName) return
@@ -196,6 +242,42 @@ object AlarmRinger {
         } catch (e: RuntimeException) {
             Log.w(TAG, "Can't go back to the home screen", e)
         }
+    }
+
+    // How the last alarm went, for the MQTT state, or null if none has rung
+    // since the app was installed:
+    // {"id", "time", "app", "play", "rang_at", "warmup", "had_session",
+    //  "path", "result", "reason", "playing_after_s", "nudges"}
+    // `result` is null while it rings, then "playing", "silent" (asked, but
+    // not heard in time), "failed" (with `reason`), "elsewhere" (playing on
+    // another device) or "alarm_sound" (an alarm without an app). `warmup` is
+    // what AlarmWarmup did a minute before (see Warmup), null if it didn't
+    // run. `path` and `had_session` are MediaStarter's.
+    fun lastOutcome(context: Context): JSONObject? =
+        outcome ?: AlarmStore(context).loadOutcome()?.also { outcome = it }
+
+    private var outcome: JSONObject? = null
+
+    // Updates the outcome and publishes it. Saved each time, since the
+    // process may not last as long as the alarm.
+    private fun report(context: Context, vararg fields: Pair<String, Any?>) {
+        val record = outcome ?: return
+        for ((key, value) in fields) record.put(key, value ?: JSONObject.NULL)
+        AlarmStore(context).saveOutcome(record)
+        StateReporter.get(context).refresh()
+    }
+
+    // What AlarmWarmup did, and for which alarm, until that alarm rings
+    private var warmup: Triple<String, String, Long>? = null
+
+    fun noteWarmup(alarm: Alarm, result: String) {
+        warmup = Triple(alarm.id, result, SystemClock.elapsedRealtime())
+    }
+
+    private fun takeWarmup(alarm: Alarm): String? {
+        val (id, result, at) = warmup ?: return null
+        warmup = null
+        return result.takeIf { id == alarm.id && SystemClock.elapsedRealtime() - at < WARMUP_FRESH_MILLIS }
     }
 
     // Ends an alarm that is still going when its stopAfterMinutes are up:

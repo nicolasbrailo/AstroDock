@@ -71,8 +71,20 @@ class AlarmStore(context: Context) {
         prefs.edit().putString(KEY, array.toString()).commit()
     }
 
+    // How the last alarm went (AlarmRinger.lastOutcome), as it was reported
+    fun loadOutcome(): JSONObject? = try {
+        prefs.getString(KEY_OUTCOME, null)?.let { JSONObject(it) }
+    } catch (e: JSONException) {
+        null
+    }
+
+    fun saveOutcome(outcome: JSONObject) {
+        prefs.edit().putString(KEY_OUTCOME, outcome.toString()).commit()
+    }
+
     private companion object {
         const val TAG = "AlarmStore"
         const val KEY = "alarms"
+        const val KEY_OUTCOME = "last_outcome"
     }
 }

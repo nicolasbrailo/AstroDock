@@ -262,4 +262,21 @@
         android:layout_height="match_parent"
         android:background="@android:color/black"
         android:visibility="gone" />
+
+    <!-- Where the alert goes, but over the night cover: says the night rule
+         applies and when it will switch the screen off, so a device that
+         stays on at night shows which half of the rule isn't working. Not
+         clickable, so touches go through to the cover. -->
+    <TextView
+        android:id="@+id/night_status"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|end"
+        android:layout_margin="24dp"
+        android:background="@drawable/status_background"
+        android:maxWidth="560dp"
+        android:padding="12dp"
+        android:textColor="#FFFFC107"
+        android:textSize="16sp"
+        android:visibility="gone" />
 </FrameLayout>

@@ -19,6 +19,7 @@ import android.provider.Settings as AndroidSettings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.nicobrailo.astrodock.BuildConfig
+import com.nicobrailo.astrodock.alarm.AlarmRinger
 import com.nicobrailo.astrodock.R
 import com.nicobrailo.astrodock.ScreenControl
 import com.nicobrailo.astrodock.Settings
@@ -343,6 +344,11 @@ class StateReporter private constructor(private val context: Context) {
     // Whether a screensaver (ours or the Portal's) is running, as far as the
     // system's broadcasts have said
     val isDreaming: Boolean get() = dreaming == true
+
+    val isScreenOn: Boolean get() = screenOn
+
+    // Whether one of our slideshows is up, under the night cover or not
+    val isSlideshowShowing: Boolean get() = showing.isNotEmpty()
 
     // Sends a call message to another device: not retained, since a retained
     // one would come back on every reconnect, and QoS 1, since a lost hangup
@@ -992,6 +998,7 @@ class StateReporter private constructor(private val context: Context) {
             // A Portal without a battery reports one that is absent and empty
             .put("battery", orNull(battery?.takeIf { it.present }?.let { batteryJson(it) }))
             .put("call", call.stateJson())
+            .put("alarm", orNull(AlarmRinger.lastOutcome(context)))
             .put("wifi_rssi", orNull(rssi?.toInt()))
             .put("light_lux", orNull(lux?.toInt()))
             .put(

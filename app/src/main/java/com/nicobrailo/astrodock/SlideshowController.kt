@@ -48,6 +48,7 @@ import com.nicobrailo.astrodock.presence.PortalLog
 import com.nicobrailo.astrodock.presence.PortalPresence
 import androidx.preference.PreferenceManager
 import com.nicobrailo.astrodock.mqtt.Command
+import com.nicobrailo.astrodock.mqtt.MqttSettings
 import com.nicobrailo.astrodock.mqtt.StateReporter
 import com.nicobrailo.astrodock.weather.PlaceCache
 import com.nicobrailo.astrodock.weather.WeatherClient
@@ -60,6 +61,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.sign
 
@@ -136,6 +138,11 @@ class SlideshowController(
     // Covers the pictures at night, while the screen is on but shouldn't be
     private val nightCover: View = root.findViewById(R.id.night_cover)
     private var dark = false
+    // Over the cover: when the night rule will switch the screen off
+    private val nightStatus: TextView = root.findViewById(R.id.night_status)
+    private var nightStatusJob: Job? = null
+    // When the night watch next checks (elapsedRealtime), for that countdown
+    private var nextNightCheckAt = 0L
     // Between start() and stop(), which is when going dark and back is news for
     // the broker; the two of them report the rest
     private var started = false
@@ -382,7 +389,7 @@ class SlideshowController(
         }
         weatherJob = scope.launch {
             while (true) {
-                updateWeather(settings.weatherPlace)
+                updateWeather(settings)
                 delay(millisToNextHour(Instant.now(), ZoneId.systemDefault()))
             }
         }
@@ -391,8 +398,11 @@ class SlideshowController(
     // The place is resolved on every round rather than once, which costs
     // nothing once it is cached and means a geocoder that was down when the
     // slideshow started is asked again an hour later, instead of never.
-    private suspend fun updateWeather(placeName: String) {
-        val weather = try {
+    private suspend fun updateWeather(settings: Settings) {
+        val placeName = settings.weatherPlace
+        // Names this device in the relay's list of recent clients
+        val client = MqttSettings.load(context).topicPrefix.trimEnd('/')
+        val current = try {
             val place = weatherPlaces.resolve(placeName, weatherClient)
             if (place == null) {
                 // A name the geocoder doesn't know won't be found next hour
@@ -402,7 +412,7 @@ class SlideshowController(
                 reporter.setError(ERROR_WEATHER, "Found no place called \"$placeName\"")
                 return
             }
-            weatherClient.current(place)
+            weatherClient.current(place, settings.weatherRelayUrl, settings.weatherRelayFallback, client)
         } catch (e: WeatherException) {
             // Nothing on screen depends on this, and the pictures are the
             // point, so a broker-style alert would be more noise than it is
@@ -411,7 +421,9 @@ class SlideshowController(
             reporter.setError(ERROR_WEATHER, e.message.orEmpty())
             return
         }
-        reporter.setError(ERROR_WEATHER, null)
+        // Fell back to Open-Meteo: the panel is right, but the relay is broken
+        reporter.setError(ERROR_WEATHER, current.relayError?.let { "Weather relay failed, used Open-Meteo: $it" })
+        val weather = current.weather
         weatherTemperature.text = weather.temperatureText
         weatherIcon.setImageResource(iconOf(weather.condition))
         weatherPanel.visibility = View.VISIBLE
@@ -740,6 +752,8 @@ class SlideshowController(
     // is from black to black.
     private fun startNightWatch() {
         nightJob?.cancel()
+        // Set before each check, since going dark starts the countdown at once
+        nextNightCheckAt = SystemClock.elapsedRealtime() + NIGHT_FIRST_CHECK_MILLIS
         // Straight away, so a screen the Portal has just woken never shows a
         // picture; switching it off can wait for the first check
         checkNight(mayLock = false)
@@ -748,6 +762,7 @@ class SlideshowController(
             // touch the screen before it goes off again
             delay(NIGHT_FIRST_CHECK_MILLIS)
             while (true) {
+                nextNightCheckAt = SystemClock.elapsedRealtime() + NIGHT_CHECK_MILLIS
                 checkNight(mayLock = true)
                 delay(NIGHT_CHECK_MILLIS)
             }
@@ -764,19 +779,75 @@ class SlideshowController(
         // but log a line every 30s all night
         if (context.getSystemService(PowerManager::class.java)?.isInteractive == false) return
 
-        val wallNow = System.currentTimeMillis()
         val portal = PortalLog.presence.takeIf { PortalLog.isReading }
-        portal?.update(wallNow)
-        val buttonWake = portal?.lastWake?.takeIf { it.cause == PortalPresence.WAKE_BUTTON }
-        val lockNow = ScreenControl.nightLockNow(
-            sinceLastLockMillis = state.lastNightLockAt?.let { now - it },
-            camera = portal?.verdict,
-            sinceButtonWakeMillis = buttonWake?.let { wallNow - it.at },
-        )
-        if (!lockNow) return
+        portal?.update(System.currentTimeMillis())
+        if (!nightLockWanted(now)) return
         state.lastNightLockAt = now
         Log.i(TAG, "Night hours: turning the screen off (camera: ${portal?.verdict})")
         ScreenControl.turnScreenOff(context, ScreenControl.NIGHT)
+    }
+
+    // Whether a night check at `at` (elapsedRealtime, now or later) would
+    // switch the screen off. The camera is taken as it is now, since its
+    // reports can't be foreseen; the caller brings it up to date first.
+    private fun nightLockWanted(at: Long): Boolean {
+        val wallAt = System.currentTimeMillis() + (at - SystemClock.elapsedRealtime())
+        val portal = PortalLog.presence.takeIf { PortalLog.isReading }
+        val buttonWake = portal?.lastWake?.takeIf { it.cause == PortalPresence.WAKE_BUTTON }
+        return ScreenControl.nightLockNow(
+            sinceLastLockMillis = state.lastNightLockAt?.let { at - it },
+            camera = portal?.verdict,
+            sinceButtonWakeMillis = buttonWake?.let { wallAt - it.at },
+        )
+    }
+
+    // Says, over the cover, that the night rule applies and when the next
+    // check will switch the screen off, so a device that stays on at night
+    // shows whether it's the rule or the lock that isn't working. A camera
+    // that sees somebody holds the lock off for as long as it does, so then
+    // there is no time to give.
+    private fun updateNightStatus() {
+        PortalLog.presence.takeIf { PortalLog.isReading }?.update(System.currentTimeMillis())
+        val now = SystemClock.elapsedRealtime()
+        val lockAt = generateSequence(maxOf(nextNightCheckAt, now)) { it + NIGHT_CHECK_MILLIS }
+            .take(NIGHT_STATUS_CHECKS_AHEAD)
+            .firstOrNull { nightLockWanted(it) }
+        val countdown = if (lockAt == null) {
+            context.getString(R.string.night_status_someone_seen)
+        } else {
+            val seconds = ((lockAt - now + 999) / 1000).toInt()
+            context.getString(R.string.night_status_lock_in, seconds)
+        }
+        nightStatus.text = "$countdown\n${wakeCause()}"
+    }
+
+    // What last woke the screen or kept it on, for the night status: the
+    // newest of the Portal's last wake, the last touch and the camera's last
+    // report of somebody, which keeps a screen on without waking it, every
+    // 30s for as long as they stay. Without the log a touch can't be put in
+    // order with the rest, so nothing is guessed.
+    private fun wakeCause(): String {
+        val portal = PortalLog.presence.takeIf { PortalLog.isReading }
+            ?: return context.getString(R.string.night_status_woken_unknown)
+        val touchAt = state.lastTouchAt.takeIf { it > 0 }
+            ?.let { System.currentTimeMillis() - (SystemClock.elapsedRealtime() - it) }
+        val events = listOfNotNull(
+            portal.lastWake?.let { wake ->
+                val cause = when (wake.cause) {
+                    PortalPresence.WAKE_PRESENCE -> context.getString(R.string.night_wake_presence)
+                    PortalPresence.WAKE_BUTTON -> context.getString(R.string.night_wake_button)
+                    PortalPresence.WAKE_SCREENSAVER_END -> context.getString(R.string.night_wake_screensaver_end)
+                    else -> context.getString(R.string.night_wake_app, wake.details)
+                }
+                Triple(R.string.night_status_woken, cause, wake.at)
+            },
+            touchAt?.let { Triple(R.string.night_status_woken, context.getString(R.string.night_wake_touch), it) },
+            portal.lastSeenAt?.let { Triple(R.string.night_status_kept_on, context.getString(R.string.night_wake_presence), it) },
+        )
+        val (template, cause, at) = events.maxByOrNull { it.third }
+            ?: return context.getString(R.string.night_status_woken_none)
+        val time = Instant.ofEpochMilli(at).atZone(ZoneId.systemDefault()).format(WAKE_TIME_FORMAT)
+        return context.getString(template, cause, time)
     }
 
     // Covers the pictures in black and turns the backlight down to its lowest
@@ -786,6 +857,16 @@ class SlideshowController(
         dark = on
         Log.i(TAG, if (on) "Night hours: dark" else "Night hours: showing pictures")
         nightCover.visibility = if (on) View.VISIBLE else View.GONE
+        nightStatusJob?.cancel()
+        nightStatus.visibility = if (on) View.VISIBLE else View.GONE
+        if (on) {
+            nightStatusJob = scope.launch {
+                while (true) {
+                    updateNightStatus()
+                    delay(NIGHT_STATUS_TICK_MILLIS)
+                }
+            }
+        }
         // Nobody can see a slideshow under the cover, so it isn't active
         if (started) reporter.onSlideshowShown(reporterSource, shown = true, dark = on)
         window.attributes = window.attributes.apply {
@@ -1054,6 +1135,11 @@ class SlideshowController(
 
         const val NIGHT_CHECK_MILLIS = 30_000L
         const val NIGHT_FIRST_CHECK_MILLIS = 20_000L
+        const val NIGHT_STATUS_TICK_MILLIS = 1000L
+        val WAKE_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
+        // Enough checks to see past the longest wait that isn't the camera,
+        // the relock interval, which the button's grace is shorter than
+        const val NIGHT_STATUS_CHECKS_AHEAD = (ScreenControl.NIGHT_RELOCK_MILLIS / NIGHT_CHECK_MILLIS).toInt() + 2
         // The lowest backlight level there is (1 of 255)
         const val NIGHT_BRIGHTNESS = 1f / 255
         // How much harder it is to drag when there is no picture to move to
