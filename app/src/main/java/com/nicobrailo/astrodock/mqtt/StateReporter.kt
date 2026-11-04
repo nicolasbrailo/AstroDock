@@ -992,6 +992,7 @@ class StateReporter private constructor(private val context: Context) {
                     .put("last_wake", orNull(portal?.lastWake?.let { screenChangeJson(it) }))
                     .put("last_sleep", orNull(portal?.lastSleep?.let { screenChangeJson(it) }))
             )
+            .put("night", nightJson(now))
             .put("errors", JSONArray().apply {
                 for ((source, message) in errors) put(JSONObject().put("source", source).put("message", message))
             })
@@ -1010,6 +1011,41 @@ class StateReporter private constructor(private val context: Context) {
                     // every look
                     .put("started_at", startedAt)
                     .put("device_booted_at", bootedAt)
+            )
+    }
+
+    // Each of the night rule's conditions, and the last time a night cover
+    // went up or down and why, so a screen lit at night says from the record
+    // alone whether the rule was off and which condition held it off, or the
+    // rule applied and the cover came down anyway. The zone is there because
+    // the hours are judged in it.
+    private fun nightJson(now: Long): JSONObject {
+        val slideshow = SlideshowState.shared
+        val rule = slideshow.nightRule(context, now)
+        val settings = slideshow.currentSettings
+        val cover = slideshow.lastCoverChange
+        return JSONObject()
+            .put("applies", rule.applies)
+            .put("settings_loaded", rule.settingsLoaded)
+            .put("enabled", rule.enabled)
+            .put("start_hour", orNull(settings?.nightStartHour))
+            .put("end_hour", orNull(settings?.nightEndHour))
+            .put("zone", ZoneId.systemDefault().id)
+            .put("in_hours", rule.inHours)
+            .put("admin", rule.admin)
+            .put("touch_grace", rule.touchGrace)
+            .put("last_touch_at", orNull(slideshow.lastTouchWallAt?.let { it / 1000 }))
+            .put("alarm_grace", rule.alarmGrace)
+            .put("last_alarm_at", orNull(slideshow.lastAlarmWallAt?.let { it / 1000 }))
+            .put(
+                "cover_change",
+                orNull(cover?.let {
+                    JSONObject()
+                        .put("cover", it.dark)
+                        .put("reason", it.reason)
+                        .put("shown_in", it.shownIn)
+                        .put("at", it.at / 1000)
+                })
             )
     }
 
@@ -1057,6 +1093,7 @@ class StateReporter private constructor(private val context: Context) {
             // When an untouched screen would have slept, if it's still on
             if (screenOn && screensaverAfter > 0) screenChangedAt + screensaverAfter else null,
             slideshow.nightGraceEndsAt,
+            slideshow.nightAlarmGraceEndsAt,
             // The night rule starts and ends on the hour
             now + millisToNextHour(Instant.now(), ZoneId.systemDefault()),
         ).filter { it > now }

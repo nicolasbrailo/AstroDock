@@ -219,7 +219,7 @@ class SlideshowController(
             nightCover.setOnTouchListener { _, event ->
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) {
                     state.noteTouch()
-                    setDark(false)
+                    setDark(false, COVER_TOUCH)
                 }
                 true
             }
@@ -298,7 +298,7 @@ class SlideshowController(
         reporter.clearCommandListener(onCommand)
         reporter.clearAlertListener(onAlert)
         nightJob?.cancel()
-        setDark(false)
+        setDark(false, COVER_STOP)
         nowPlayingJob?.cancel()
         nowPlaying.stop()
         launcherModel.stop()
@@ -772,7 +772,7 @@ class SlideshowController(
     private fun checkNight(mayLock: Boolean) {
         val now = SystemClock.elapsedRealtime()
         val night = state.nightRuleApplies(context, now)
-        setDark(night)
+        setDark(night, COVER_RULE)
         if (!night || !mayLock) return
         // After a lock the system starts the screensaver with the screen still
         // off, and its checks carry on there: locking again would do nothing
@@ -851,11 +851,13 @@ class SlideshowController(
     }
 
     // Covers the pictures in black and turns the backlight down to its lowest
-    // level, which on the Portal is dim but not off
-    private fun setDark(on: Boolean) {
+    // level, which on the Portal is dim but not off. `reason` is what the MQTT
+    // report says changed it (SlideshowState.CoverChange).
+    private fun setDark(on: Boolean, reason: String) {
         if (on == dark) return
         dark = on
-        Log.i(TAG, if (on) "Night hours: dark" else "Night hours: showing pictures")
+        Log.i(TAG, (if (on) "Night hours: dark" else "Night hours: showing pictures") + " ($reason)")
+        state.lastCoverChange = SlideshowState.CoverChange(on, reason, reporterSource, System.currentTimeMillis())
         nightCover.visibility = if (on) View.VISIBLE else View.GONE
         nightStatusJob?.cancel()
         nightStatus.visibility = if (on) View.VISIBLE else View.GONE
@@ -1136,6 +1138,10 @@ class SlideshowController(
         const val NIGHT_CHECK_MILLIS = 30_000L
         const val NIGHT_FIRST_CHECK_MILLIS = 20_000L
         const val NIGHT_STATUS_TICK_MILLIS = 1000L
+        // Why the night cover last changed, as the MQTT report names it
+        const val COVER_RULE = "rule"
+        const val COVER_TOUCH = "touch"
+        const val COVER_STOP = "stop"
         val WAKE_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
         // Enough checks to see past the longest wait that isn't the camera,
         // the relock interval, which the button's grace is shorter than

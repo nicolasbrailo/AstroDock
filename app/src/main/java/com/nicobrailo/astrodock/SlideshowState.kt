@@ -55,9 +55,14 @@ class SlideshowState private constructor() {
     // for a while after someone has used the device
     var lastTouchAt: Long = 0
         private set
+    // The same in wall-clock milliseconds, for the MQTT report; converting the
+    // one above would come out a millisecond different on every look
+    var lastTouchWallAt: Long? = null
+        private set
 
     fun noteTouch() {
         lastTouchAt = SystemClock.elapsedRealtime()
+        lastTouchWallAt = System.currentTimeMillis()
         // Somebody is there, which tells whether the camera noticed
         PortalLog.noteSomebody()
         // Touching the screen is how the alarm sound is stopped
@@ -68,10 +73,14 @@ class SlideshowState private constructor() {
     // one, like after a touch, or an alarm set inside the night hours would
     // ring under the black cover and have the screen switched off under it.
     // Not a touch, since nobody is known to be there.
-    private var lastAlarmAt: Long? = null
+    var lastAlarmAt: Long? = null
+        private set
+    var lastAlarmWallAt: Long? = null
+        private set
 
     fun noteAlarm() {
         lastAlarmAt = SystemClock.elapsedRealtime()
+        lastAlarmWallAt = System.currentTimeMillis()
     }
 
     // When the night rule last turned the screen off, or null if it hasn't.
@@ -84,17 +93,49 @@ class SlideshowState private constructor() {
     // the device admin the rule does nothing at all rather than half of it,
     // since the settings screen greys it out. The slideshow asks, to go dark,
     // and so does the MQTT report, which has to know with nothing on screen.
-    fun nightRuleApplies(context: Context, now: Long = SystemClock.elapsedRealtime()): Boolean {
-        val s = settings ?: return false
-        return s.nightScreenOff &&
-            ScreenControl.isNight(LocalTime.now().hour, s.nightStartHour, s.nightEndHour) &&
-            now - lastTouchAt >= NIGHT_TOUCH_GRACE_MILLIS &&
-            lastAlarmAt.let { it == null || now - it >= NIGHT_ALARM_GRACE_MILLIS } &&
-            ScreenControl.canTurnScreenOff(context)
+    fun nightRuleApplies(context: Context, now: Long = SystemClock.elapsedRealtime()): Boolean =
+        nightRule(context, now).applies
+
+    // Each of the night rule's conditions, so the MQTT report can say which
+    // one held it off when a screen stayed lit at night
+    data class NightRule(
+        // False until a slideshow has loaded the settings in this process
+        val settingsLoaded: Boolean,
+        val enabled: Boolean,
+        val inHours: Boolean,
+        val touchGrace: Boolean,
+        val alarmGrace: Boolean,
+        val admin: Boolean,
+    ) {
+        val applies: Boolean
+            get() = settingsLoaded && enabled && inHours && !touchGrace && !alarmGrace && admin
+    }
+
+    fun nightRule(context: Context, now: Long = SystemClock.elapsedRealtime()): NightRule {
+        val s = settings
+        return NightRule(
+            settingsLoaded = s != null,
+            enabled = s?.nightScreenOff == true,
+            inHours = s != null && ScreenControl.isNight(LocalTime.now().hour, s.nightStartHour, s.nightEndHour),
+            touchGrace = now - lastTouchAt < NIGHT_TOUCH_GRACE_MILLIS,
+            alarmGrace = lastAlarmAt.let { it != null && now - it < NIGHT_ALARM_GRACE_MILLIS },
+            admin = ScreenControl.canTurnScreenOff(context),
+        )
     }
 
     // When the latest touch stops holding off the night rule
     val nightGraceEndsAt: Long get() = lastTouchAt + NIGHT_TOUCH_GRACE_MILLIS
+
+    // When the latest alarm stops holding it off, or null if none rang
+    val nightAlarmGraceEndsAt: Long? get() = lastAlarmAt?.plus(NIGHT_ALARM_GRACE_MILLIS)
+
+    // The last time a slideshow's night cover went up or down, and why: `rule`
+    // for the night check, `touch` for a touch on the cover, `stop` for the
+    // slideshow going away. `at` is wall-clock milliseconds. Kept here rather
+    // than in each slideshow, since the handovers replace them.
+    data class CoverChange(val dark: Boolean, val reason: String, val shownIn: String, val at: Long)
+
+    var lastCoverChange: CoverChange? = null
 
     // The picture on screen and its neighbours
     val current: AlbumPicture? get() = history.current

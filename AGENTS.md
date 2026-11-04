@@ -343,6 +343,15 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   `result`, `reason`, `playing_after_s` and `nudges`; `result` is null while
   it rings, then `playing`, `silent`, `failed`, `elsewhere` or
   `alarm_sound`; see `alarm/` below);
+  `night`, the night rule taken apart (`SlideshowState.nightRule`), so a
+  screen lit at night says why from the record alone: `applies`, and each
+  condition (`settings_loaded`, false until a slideshow has loaded the
+  settings in this process; `enabled`, `start_hour`, `end_hour`, `zone`,
+  `in_hours`, `admin`, `touch_grace` with `last_touch_at`, `alarm_grace`
+  with `last_alarm_at`), and `cover_change`, the last time a night cover
+  went up or down (`cover`, `reason`: `rule`, `touch` on the cover or `stop`
+  for the slideshow going away, `shown_in`, `at`), which tells a cover
+  dropped while the rule still applied from a rule that stopped applying;
   `errors` (`[{source, message}]`, `immich`, `weather` and `presence`,
   cleared once they work again); `battery` (level, status, plugged, health, technology,
   temperature and voltage; `null` on a Portal without one); `wifi_rssi`;
