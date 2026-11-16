@@ -1037,6 +1037,7 @@ class StateReporter private constructor(private val context: Context) {
             .put("last_touch_at", orNull(slideshow.lastTouchWallAt?.let { it / 1000 }))
             .put("alarm_grace", rule.alarmGrace)
             .put("last_alarm_at", orNull(slideshow.lastAlarmWallAt?.let { it / 1000 }))
+            .put("grace_ended_at", orNull(slideshow.nightGraceEndedWallAt?.let { it / 1000 }))
             .put(
                 "cover_change",
                 orNull(cover?.let {

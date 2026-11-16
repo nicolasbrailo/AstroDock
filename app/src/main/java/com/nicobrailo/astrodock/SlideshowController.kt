@@ -140,6 +140,11 @@ class SlideshowController(
     private var dark = false
     // Over the cover: when the night rule will switch the screen off
     private val nightStatus: TextView = root.findViewById(R.id.night_status)
+    // Over the pictures at night: what holds the rule off, and for how long
+    private val nightPausedPanel: View = root.findViewById(R.id.night_paused_panel)
+    private val nightPaused: TextView = root.findViewById(R.id.night_paused)
+    private val nightPausedNow: View = root.findViewById(R.id.night_paused_now)
+    // Keeps whichever of the two is up current
     private var nightStatusJob: Job? = null
     // When the night watch next checks (elapsedRealtime), for that countdown
     private var nextNightCheckAt = 0L
@@ -213,6 +218,7 @@ class SlideshowController(
                 updatePictureInfo()
             }
             clock.setOnClickListener { toggleDebug() }
+            nightPausedNow.setOnClickListener { startNightNow() }
             setUpTouch()
             // A touch in the dark only brings the pictures back, rather than
             // also opening the app list the user can't see yet
@@ -299,6 +305,11 @@ class SlideshowController(
         reporter.clearAlertListener(onAlert)
         nightJob?.cancel()
         setDark(false, COVER_STOP)
+        // A grace still running would otherwise keep its line, and its ticker,
+        // going with nothing on screen
+        nightStatusJob?.cancel()
+        nightStatusJob = null
+        nightPausedPanel.visibility = View.GONE
         nowPlayingJob?.cancel()
         nowPlaying.stop()
         launcherModel.stop()
@@ -773,6 +784,9 @@ class SlideshowController(
         val now = SystemClock.elapsedRealtime()
         val night = state.nightRuleApplies(context, now)
         setDark(night, COVER_RULE)
+        // Also when the cover didn't change: a home screen woken by a touch on
+        // the screensaver starts out uncovered, with the touch's grace to show
+        syncNightStatus()
         if (!night || !mayLock) return
         // After a lock the system starts the screensaver with the screen still
         // off, and its checks carry on there: locking again would do nothing
@@ -850,6 +864,69 @@ class SlideshowController(
         return context.getString(template, cause, time)
     }
 
+    // Shows the night line that fits: over the cover, the countdown to the
+    // lock; over the pictures, while a touch or an alarm holds the rule off,
+    // what does and for how long, since a screen lit at night otherwise looks
+    // like the rule failing. One ticker keeps either current, and carries on
+    // across the cover going up or down.
+    // Both lines are diagnostics, which the Slideshow tab can turn off.
+    private fun syncNightStatus() {
+        val diagnostics = state.settings?.nightDiagnostics != false
+        val covered = diagnostics && dark
+        val paused = diagnostics && !dark && state.nightPause(context) != null
+        nightStatus.visibility = if (covered) View.VISIBLE else View.GONE
+        nightPausedPanel.visibility = if (paused) View.VISIBLE else View.GONE
+        if (!covered && !paused) {
+            nightStatusJob?.cancel()
+            nightStatusJob = null
+            return
+        }
+        if (nightStatusJob?.isActive == true) return
+        nightStatusJob = scope.launch {
+            while (true) {
+                tickNightStatus()
+                delay(NIGHT_STATUS_TICK_MILLIS)
+            }
+        }
+    }
+
+    private fun tickNightStatus() {
+        val now = SystemClock.elapsedRealtime()
+        // The cover follows the rule within the second rather than at the next
+        // check, up to 30s later: an alarm uncovers the pictures as it rings,
+        // and the end of a grace covers them as its countdown reaches zero.
+        // Switching the screen off is still left to the checks.
+        if (dark != state.nightRuleApplies(context, now)) checkNight(mayLock = false)
+        // checkNight may have stopped this ticker, when the diagnostics are off
+        if (nightStatusJob == null) return
+        if (dark) {
+            updateNightStatus()
+            return
+        }
+        val pause = state.nightPause(context, now)
+        if (pause == null) {
+            syncNightStatus()
+            return
+        }
+        val seconds = ((pause.endsAt - now + 999) / 1000).coerceAtLeast(0)
+        val left = "%d:%02d".format(seconds / 60, seconds % 60)
+        nightPaused.text = context.getString(
+            if (pause.cause == SlideshowState.PAUSE_ALARM) R.string.night_paused_alarm else R.string.night_paused_touch,
+            left,
+        )
+    }
+
+    // The night diagnostics' button: ends the touch or alarm grace, so the
+    // cover goes up now rather than when the countdown runs out. Switching
+    // the screen off is still left to the next check, which the line over the
+    // cover counts down to.
+    private fun startNightNow() {
+        Log.i(TAG, "Night mode started from the button")
+        state.endNightGrace()
+        setDark(state.nightRuleApplies(context), COVER_BUTTON)
+        syncNightStatus()
+    }
+
     // Covers the pictures in black and turns the backlight down to its lowest
     // level, which on the Portal is dim but not off. `reason` is what the MQTT
     // report says changed it (SlideshowState.CoverChange).
@@ -859,16 +936,7 @@ class SlideshowController(
         Log.i(TAG, (if (on) "Night hours: dark" else "Night hours: showing pictures") + " ($reason)")
         state.lastCoverChange = SlideshowState.CoverChange(on, reason, reporterSource, System.currentTimeMillis())
         nightCover.visibility = if (on) View.VISIBLE else View.GONE
-        nightStatusJob?.cancel()
-        nightStatus.visibility = if (on) View.VISIBLE else View.GONE
-        if (on) {
-            nightStatusJob = scope.launch {
-                while (true) {
-                    updateNightStatus()
-                    delay(NIGHT_STATUS_TICK_MILLIS)
-                }
-            }
-        }
+        syncNightStatus()
         // Nobody can see a slideshow under the cover, so it isn't active
         if (started) reporter.onSlideshowShown(reporterSource, shown = true, dark = on)
         window.attributes = window.attributes.apply {
@@ -1024,6 +1092,12 @@ class SlideshowController(
             .firstOrNull { e.lands(it) }
             ?.tag as? HomeEntry
         when {
+            // The grace ends here; the home screen the screensaver hands over
+            // to then starts out dark
+            e.lands(nightPausedNow) -> {
+                Log.i(TAG, "Night mode started from the button in the screensaver")
+                state.endNightGrace()
+            }
             shortcut != null && openShortcut(shortcut) -> return
             e.lands(nowPlayingPanel) && openMediaApp() -> return
             // Kept in the shared state, so the home screen shows it expanded
@@ -1142,6 +1216,7 @@ class SlideshowController(
         const val COVER_RULE = "rule"
         const val COVER_TOUCH = "touch"
         const val COVER_STOP = "stop"
+        const val COVER_BUTTON = "button"
         val WAKE_TIME_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
         // Enough checks to see past the longest wait that isn't the camera,
         // the relock interval, which the button's grace is shorter than

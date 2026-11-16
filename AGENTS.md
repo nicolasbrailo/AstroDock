@@ -348,9 +348,11 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   condition (`settings_loaded`, false until a slideshow has loaded the
   settings in this process; `enabled`, `start_hour`, `end_hour`, `zone`,
   `in_hours`, `admin`, `touch_grace` with `last_touch_at`, `alarm_grace`
-  with `last_alarm_at`), and `cover_change`, the last time a night cover
-  went up or down (`cover`, `reason`: `rule`, `touch` on the cover or `stop`
-  for the slideshow going away, `shown_in`, `at`), which tells a cover
+  with `last_alarm_at`, and `grace_ended_at`, the last time the "Start night
+  mode now" button ended both graces), and `cover_change`, the last time a
+  night cover went up or down (`cover`, `reason`: `rule`, `touch` on the
+  cover, `button` for that button or `stop` for the slideshow going away,
+  `shown_in`, `at`), which tells a cover
   dropped while the rule still applied from a rule that stopped applying;
   `errors` (`[{source, message}]`, `immich`, `weather` and `presence`,
   cleared once they work again); `battery` (level, status, plugged, health, technology,
@@ -869,7 +871,9 @@ place to show it for: a town or city, with a comma and the region or country
 if several share the name, or "latitude, longitude". Empty hides the panel.
 Changing any of it leaves the pictures alone. Under "Screen": an opt-in "turn
 the screen off at night" with its hours, a slider with two knobs (default
-00:00 to 06:00, off). Without the device admin ("Turn the screen off" in the
+00:00 to 06:00, off), and "Show night-time mode diagnostics" (default on),
+which shows or hides both night lines over the slideshow and the button (see
+"Night screen off" below). Without the device admin ("Turn the screen off" in the
 System tab) the night rule can't do anything, so its switch and
 hours are greyed out and the reason is shown in red; this is checked every
 time the tab is resumed, so granting it enables them. The red doesn't show on
@@ -912,7 +916,24 @@ nothing an app can reach stops that:
   shows in the screensaver too, so a
   device that stays on at night shows which half isn't working. A touch on
   the cover brings the pictures back; in the screensaver a touch wakes to the home
-  screen, which then isn't dark because of that touch.
+  screen, which then isn't dark because of that touch. While a touch or an
+  alarm holds the rule off at night, a line at the top centre of the
+  pictures says which and counts down to the end of its grace
+  (`SlideshowState.nightPause`, unit tested; the longer grace is the one
+  named), so a lit screen at night doesn't look like the rule failing. It is
+  only shown when the rule would otherwise apply, so not by day or without
+  the device admin. Next to it, "Start night mode now" ends both graces
+  (`SlideshowState.endNightGrace`, which sets a cutoff instead of forgetting
+  the touch, since the wake cause and the alarm warm-up still read it, and
+  stops the alarm sound as any touch would), so the cover goes up at once
+  and the next check may switch the screen off. In the screensaver, tapping
+  it ends the graces and wakes to the home screen, which then starts dark:
+  the way to get from a screensaver that was touched to night mode. The
+  Slideshow tab's "Show night-time mode diagnostics" hides both lines and
+  the button, leaving a plain black cover. While either line is up, the cover follows the rule
+  within the second rather than at the next check, so an alarm uncovers the
+  pictures as it rings and the cover returns as the countdown reaches zero;
+  switching the screen off is still left to the checks.
 - **Off**: `lockNow()`, from the check that runs every 30s (the first 20s after
   the slideshow appears), when `ScreenControl.nightLockNow` (unit tested)
   says it will stick. While `PortalLog` reads the camera's reports: not while

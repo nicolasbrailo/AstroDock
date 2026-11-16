@@ -30,6 +30,9 @@
     <string name="slideshow_loading">Loading pictures…</string>
     <string name="night_status_lock_in">Night mode active, screen will turn off in %1$ds</string>
     <string name="night_status_someone_seen">Night mode active, the screen stays on while the camera sees somebody</string>
+    <string name="night_paused_touch">Night mode paused by a touch for another %1$s</string>
+    <string name="night_paused_alarm">Night mode paused by the alarm for another %1$s</string>
+    <string name="night_paused_now">Start night mode now</string>
     <string name="night_status_woken">Woken by %1$s at %2$s</string>
     <string name="night_status_kept_on">Kept on by %1$s, last at %2$s</string>
     <string name="night_status_woken_unknown">Woken by: unknown, the Portal\'s log can\'t be read</string>
@@ -139,6 +142,8 @@
     <string name="settings_night_screen_off_hint">Keeps the screen dark during the hours below: switched off, or black and dimmed while the Portal keeps waking it because someone is in the room. A touch brings the pictures back for a few minutes. Needs \"Turn the screen off\" in the System tab.</string>
     <string name="settings_night_screen_off_no_admin">Not available: AstroDock has no permission to turn the screen off. Grant \"Turn the screen off\" in the System tab, or on a Portal, run tools/setup-device.sh.</string>
     <string name="settings_night_hours">Night hours</string>
+    <string name="settings_night_diagnostics">Show night-time mode diagnostics</string>
+    <string name="settings_night_diagnostics_hint">During the night hours, says what keeps the pictures showing, with a button to start night mode now, and over the black screen, when it will turn off and what last woke it.</string>
     <string name="settings_night_hours_summary">From %1$s to %2$s</string>
 
     <string name="home_button_description">Home</string>

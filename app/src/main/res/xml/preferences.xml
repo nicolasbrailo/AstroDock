@@ -113,5 +113,11 @@
             app:key="night_hours"
             app:title="@string/settings_night_hours"
             app:dependency="night_screen_off" />
+        <SwitchPreferenceCompat
+            app:key="night_diagnostics"
+            app:title="@string/settings_night_diagnostics"
+            app:summary="@string/settings_night_diagnostics_hint"
+            app:defaultValue="true"
+            app:dependency="night_screen_off" />
     </PreferenceCategory>
 </PreferenceScreen>

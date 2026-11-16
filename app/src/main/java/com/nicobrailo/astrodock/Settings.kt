@@ -20,6 +20,9 @@ data class Settings(
     val nightScreenOff: Boolean,
     val nightStartHour: Int,
     val nightEndHour: Int,
+    // Lines over the slideshow at night saying why the screen is lit or when
+    // it will go off, with a button to start night mode at once
+    val nightDiagnostics: Boolean,
     // Current temperature and sky over the clock, from Open-Meteo. It needs no
     // account, only somewhere to report on, so there is no key to store.
     val weatherEnabled: Boolean,
@@ -53,6 +56,7 @@ data class Settings(
         const val KEY_NIGHT_SCREEN_OFF = "night_screen_off"
         const val KEY_NIGHT_START_HOUR = "night_start_hour"
         const val KEY_NIGHT_END_HOUR = "night_end_hour"
+        const val KEY_NIGHT_DIAGNOSTICS = "night_diagnostics"
         const val KEY_WEATHER_ENABLED = "weather_enabled"
         const val KEY_WEATHER_PLACE = "weather_place"
         const val KEY_WEATHER_RELAY_URL = "weather_relay_url"
@@ -110,6 +114,7 @@ data class Settings(
                 nightScreenOff = prefs.getBoolean(KEY_NIGHT_SCREEN_OFF, false),
                 nightStartHour = int(KEY_NIGHT_START_HOUR, DEFAULT_NIGHT_START_HOUR, HOUR_RANGE),
                 nightEndHour = int(KEY_NIGHT_END_HOUR, DEFAULT_NIGHT_END_HOUR, HOUR_RANGE),
+                nightDiagnostics = prefs.getBoolean(KEY_NIGHT_DIAGNOSTICS, true),
                 weatherEnabled = prefs.getBoolean(KEY_WEATHER_ENABLED, false),
                 weatherPlace = prefs.getString(KEY_WEATHER_PLACE, null)?.trim().orEmpty(),
                 // Never set means the default; set to blank means no relay

@@ -83,6 +83,23 @@ class SlideshowState private constructor() {
         lastAlarmWallAt = System.currentTimeMillis()
     }
 
+    // When the night diagnostics' button last ended the graces above: a touch
+    // or an alarm from before it holds the night rule off no longer. Kept
+    // apart from them, since the wake cause and the alarm warm-up still want
+    // to know when the last touch was.
+    private var nightGraceEndedAt: Long = 0
+    var nightGraceEndedWallAt: Long? = null
+        private set
+
+    // Lets the night rule apply at once, rather than after the touch or the
+    // alarm that holds it off. The button that calls this is a touch on the
+    // slideshow too, so it stops the alarm sound the way any touch does.
+    fun endNightGrace() {
+        nightGraceEndedAt = SystemClock.elapsedRealtime()
+        nightGraceEndedWallAt = System.currentTimeMillis()
+        AlarmRinger.silence()
+    }
+
     // When the night rule last turned the screen off, or null if it hasn't.
     // Shared because the Portal's wake starts a new screensaver, which has to
     // know the screen it is on was switched off moments ago.
@@ -117,8 +134,10 @@ class SlideshowState private constructor() {
             settingsLoaded = s != null,
             enabled = s?.nightScreenOff == true,
             inHours = s != null && ScreenControl.isNight(LocalTime.now().hour, s.nightStartHour, s.nightEndHour),
-            touchGrace = now - lastTouchAt < NIGHT_TOUCH_GRACE_MILLIS,
-            alarmGrace = lastAlarmAt.let { it != null && now - it < NIGHT_ALARM_GRACE_MILLIS },
+            touchGrace = lastTouchAt > nightGraceEndedAt && now - lastTouchAt < NIGHT_TOUCH_GRACE_MILLIS,
+            alarmGrace = lastAlarmAt.let {
+                it != null && it > nightGraceEndedAt && now - it < NIGHT_ALARM_GRACE_MILLIS
+            },
             admin = ScreenControl.canTurnScreenOff(context),
         )
     }
@@ -128,6 +147,15 @@ class SlideshowState private constructor() {
 
     // When the latest alarm stops holding it off, or null if none rang
     val nightAlarmGraceEndsAt: Long? get() = lastAlarmAt?.plus(NIGHT_ALARM_GRACE_MILLIS)
+
+    // What holds the night rule off now, if anything, so the slideshow can say
+    // why the screen is lit at night
+    fun nightPause(context: Context, now: Long = SystemClock.elapsedRealtime()): NightPause? =
+        nightPause(nightRule(context, now), nightGraceEndsAt, nightAlarmGraceEndsAt)
+
+    // A grace holding the night rule off: `cause` is PAUSE_TOUCH or
+    // PAUSE_ALARM, and `endsAt` (elapsedRealtime) is when it runs out
+    data class NightPause(val cause: String, val endsAt: Long)
 
     // The last time a slideshow's night cover went up or down, and why: `rule`
     // for the night check, `touch` for a touch on the cover, `stop` for the
@@ -256,6 +284,20 @@ class SlideshowState private constructor() {
         private const val NIGHT_TOUCH_GRACE_MILLIS = 5 * 60 * 1000L
         // And an alarm: long enough to wake up to it
         private const val NIGHT_ALARM_GRACE_MILLIS = 30 * 60 * 1000L
+
+        const val PAUSE_TOUCH = "touch"
+        const val PAUSE_ALARM = "alarm"
+
+        // Only a grace that is all that stands between the night rule and the
+        // screen counts: by day, or without the device admin, nothing is
+        // paused. With both graces running, the one that lasts longer is what
+        // keeps the screen lit, so that is the one named.
+        fun nightPause(rule: NightRule, touchGraceEndsAt: Long, alarmGraceEndsAt: Long?): NightPause? {
+            if (!(rule.settingsLoaded && rule.enabled && rule.inHours && rule.admin)) return null
+            val touch = NightPause(PAUSE_TOUCH, touchGraceEndsAt).takeIf { rule.touchGrace }
+            val alarm = alarmGraceEndsAt?.takeIf { rule.alarmGrace }?.let { NightPause(PAUSE_ALARM, it) }
+            return listOfNotNull(touch, alarm).maxByOrNull { it.endsAt }
+        }
 
         // The home screen and the screensaver are in the same process, so one
         // object is all it takes to share the slideshow between them

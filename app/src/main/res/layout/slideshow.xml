@@ -279,4 +279,45 @@
         android:textColor="#FFFFC107"
         android:textSize="16sp"
         android:visibility="gone" />
+
+    <!-- The pictures are showing at night because a touch or an alarm holds
+         the night rule off: says which, and for how long, with a button that
+         ends the hold. Over the pictures rather than the cover, so it is
+         centred, out of the alert's corner. Only the button is clickable, so
+         other touches go through to the slideshow. -->
+    <LinearLayout
+        android:id="@+id/night_paused_panel"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_margin="24dp"
+        android:background="@drawable/status_background"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/night_paused"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:maxWidth="480dp"
+            android:padding="4dp"
+            android:textColor="#FFFFC107"
+            android:textSize="16sp" />
+
+        <TextView
+            android:id="@+id/night_paused_now"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/night_button_background"
+            android:clickable="true"
+            android:focusable="true"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
+            android:text="@string/night_paused_now"
+            android:textColor="#FFFFC107"
+            android:textSize="16sp" />
+    </LinearLayout>
 </FrameLayout>
