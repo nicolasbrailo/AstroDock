@@ -569,6 +569,7 @@ class StateReporter private constructor(private val context: Context) {
                 "tcp://${settings.host}:${settings.port}",
                 settings.clientId,
                 MemoryPersistence(),
+                AlarmPingSender(context),
             )
             newClient.setCallback(object : MqttCallbackExtended {
                 override fun connectComplete(reconnect: Boolean, serverUri: String?) {
@@ -1315,7 +1316,11 @@ class StateReporter private constructor(private val context: Context) {
         private const val CALL_QOS = 1
         // A UUID is 36; anything much longer isn't one of ours
         private const val MAX_CALL_ID = 64
-        private const val KEEPALIVE_SECONDS = 30
+        // The broker drops a client after one and a half of these without a
+        // word, publishing its last will. Each ping wakes a Portal Go's CPU
+        // (see AlarmPingSender), so they are kept few; the price is that a
+        // device that vanishes is only reported offline after up to 4.5 min.
+        private const val KEEPALIVE_SECONDS = 180
         private const val CONNECT_TIMEOUT_SECONDS = 10
         // Twice the above, since that only covers opening the socket
         private const val CONNECT_GIVE_UP_MILLIS = 20_000L

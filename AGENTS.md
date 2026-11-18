@@ -306,6 +306,14 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   what lets the next `applySettings()` start a fresh one. Paho only reconnects
   by itself once it has connected at least once, so a first connect that fails
   waits for that call, which every `SlideshowController.start()` makes.
+  The keepalive is 3 minutes, and its pings come from `mqtt/AlarmPingSender.kt`
+  (a wakeup alarm, plus a partial wake lock until the broker answers) rather
+  than Paho's own `Timer`: the Portal Go suspends its CPU with the screen off,
+  even on mains power, the `Timer` then never fired, and the broker dropped
+  both Gos and published their last will about once a minute all night
+  (measured 2026-11-18 from the broker's recording; the Portal+ and the old
+  Portal didn't). The cost of the long keepalive is that a device that
+  vanishes only shows `offline` after up to 4.5 minutes.
   The home screen and the screensaver both make it as they appear, often
   while the first connect is still under way, so a client counts as current
   from `connect()` until it's replaced or given up on, connected or not, and
