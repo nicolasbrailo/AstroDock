@@ -254,7 +254,10 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   The MQTT tab's "Play audio announcements" switch (on by default) can turn
   them off; it is read as each command arrives rather than kept in
   `MqttSettings`, so switching it doesn't reconnect, and an announcement it
-  stops is dropped with a log line and nothing on screen.
+  stops is dropped with a log line and nothing on screen. The `availability`
+  record says where it stands as `"announce_audio": true|false` (republished
+  when it changes, like `calls`), which is how zmw_homeboard tells the devices
+  that play audio from the ones that can't, and only sends it to those.
   Announcements play one at a time, under a partial wake lock, so they work
   with the screen off. When the sound starts, `msg` (or "Audio announcement in
   progress" without one) is shown like a text announcement with no timeout,

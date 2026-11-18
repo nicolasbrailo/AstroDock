@@ -172,6 +172,9 @@ class StateReporter private constructor(private val context: Context) {
     // Whether the availability record we last published said we take calls
     @Volatile
     private var advertisedCalls: Boolean? = null
+    // And whether it said we play audio announcements
+    @Volatile
+    private var advertisedAudio: Boolean? = null
     private val recheck = Runnable { publishState() }
     private val publishNow = Runnable { publishState(force = false, now = true) }
 
@@ -234,10 +237,12 @@ class StateReporter private constructor(private val context: Context) {
         // runs is picked up the next time a slideshow appears. Before the
         // broker settings, since the alert and the calls need it without MQTT.
         watchPortal()
-        // Not part of MqttSettings, since it doesn't need a new connection:
+        // Not part of MqttSettings, since they don't need a new connection:
         // the record only has to say so
         val calls = CallSettings.load(context).enabled
-        if (advertisedCalls != null && calls != advertisedCalls) {
+        val audio = MqttSettings.audioAnnouncementsAllowed(context)
+        if ((advertisedCalls != null && calls != advertisedCalls) ||
+            (advertisedAudio != null && audio != advertisedAudio)) {
             publish(RetainedTopics.AVAILABILITY, availabilityPayload(online = true))
         }
 
@@ -1243,12 +1248,17 @@ class StateReporter private constructor(private val context: Context) {
         if (!online) return payload
         val calls = CallSettings.load(context).enabled
         advertisedCalls = calls
+        val audio = MqttSettings.audioAnnouncementsAllowed(context)
+        advertisedAudio = audio
         return payload
             .put("started_at_iso", DateTimeFormatter.ISO_INSTANT.format(Instant.ofEpochSecond(startedAt)))
             .put("ip", ipAddress() ?: JSONObject.NULL)
             .put("app", "astrodock")
             // Whether other devices can call this one (see CALLING.md)
             .put("calls", calls)
+            // Whether announce_audio plays anything, so senders know where to
+            // send it (zmw_homeboard only lists devices that say so)
+            .put("announce_audio", audio)
     }
 
     // The address of whichever interface is carrying traffic; there's no
