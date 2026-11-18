@@ -48,7 +48,15 @@ it up to date when the design changes.
   the digest GitHub publishes. AGP signs a release build with the debug
   keystore too, since `app/build.gradle.kts` has no signing config; keeping
   that key is what lets an installed AstroDock be updated rather than removed
-  first.
+  first. GitHub only creates a release's `V<n>` tag when it is published, after
+  the APKs are built, so the script reads the newest tag on `origin`
+  (`git ls-remote`) and builds as the next number (`VERSION=<n>` overrides
+  it), passing it to Gradle as `-PappVersion`: `versionCode` n, `versionName`
+  "n". It prints the tag to give the release. Any other build is named after
+  the newest tag it descends from, like `16-dev-3-gabc1234` (`-dirty` with
+  uncommitted changes), with that tag's `versionCode`, so it is a downgrade
+  next to a newer release, or one whose tag hasn't been fetched yet, and
+  `adb install` only takes it with `-d`.
 - `tools/force-uninstall.sh [PACKAGE]`: uninstalls the app. Needed because
   `adb uninstall` fails with `DELETE_FAILED_DEVICE_POLICY_MANAGER` once the
   user has granted the device admin: an active admin can't be uninstalled, and

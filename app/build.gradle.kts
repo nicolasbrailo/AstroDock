@@ -2,6 +2,38 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
+// A release is built before its tag exists: tools/build-apks.sh is run here,
+// the APKs are uploaded, and GitHub creates the V<n> tag as the release is
+// published. So the script works out the next number and passes it in
+// (-PappVersion=17), and the version name is the bare number because the Apps
+// tab strips the V from a tag when it compares the two, for releases without a
+// digest. Any other build (Android Studio, a plain gradlew) is named after the
+// newest tag it descends from, plus how far past it and -dirty for uncommitted
+// changes (16-dev-3-gabc1234), so it can't pass for a release; it keeps that tag's
+// version code, so it installs over that release without a downgrade.
+data class AppVersion(val code: Int, val name: String)
+
+val appVersion: AppVersion = run {
+    val given = providers.gradleProperty("appVersion").orNull
+    if (given != null) {
+        val code = given.toIntOrNull()
+        require(code != null && code > 0) { "appVersion must be a positive number, not \"$given\"" }
+        return@run AppVersion(code, code.toString())
+    }
+    val described = providers.exec {
+        commandLine("git", "describe", "--tags", "--match", "V[0-9]*", "--dirty")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim()
+    val match = Regex("""^V(\d+)(.*)$""").find(described)
+    if (match == null) {
+        logger.warn("No V<n> tag found by git describe, building as version 1")
+        AppVersion(1, "0-untagged")
+    } else {
+        val (number, rest) = match.destructured
+        AppVersion(number.toInt(), "$number-dev$rest")
+    }
+}
+
 android {
     namespace = "com.nicobrailo.astrodock"
     compileSdk {
@@ -14,8 +46,8 @@ android {
         applicationId = "com.nicobrailo.astrodock"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = appVersion.code
+        versionName = appVersion.name
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

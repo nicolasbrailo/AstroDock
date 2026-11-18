@@ -16,6 +16,11 @@
 # has to stay the same key, or an AstroDock already on a device can't be
 # updated, only uninstalled first.
 #
+# The version is the newest V<n> tag on GitHub plus one, since GitHub only
+# creates the tag when the release is published, after this script has run.
+# Name the release after the tag the script prints. VERSION=<n> in the
+# environment overrides it, e.g. to rebuild a release that isn't out yet.
+#
 # The unit tests run first, since an APK that's about to be published is worth
 # that much. Each APK's sha256 is printed, which is what the Apps tab compares
 # against the digest GitHub publishes for the uploaded file.
@@ -36,8 +41,18 @@ SDK=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Android/Sdk}}
 export ANDROID_HOME=$SDK
 BUILD_TOOLS=$SDK/build-tools/$(ls -1 "$SDK/build-tools" | sort -V | tail -1)
 
+if [[ -z ${VERSION:-} ]]; then
+  # Asking GitHub rather than the local tags, which are only as fresh as the
+  # last fetch
+  latest=$(git ls-remote --tags --refs origin 'V*' | sed -n 's|.*refs/tags/V\([0-9][0-9]*\)$|\1|p' | sort -n | tail -1)
+  [[ -n $latest ]] || { echo "Can't read the V<n> tags from origin; set VERSION" >&2; exit 1; }
+  VERSION=$((latest + 1))
+fi
+[[ $VERSION =~ ^[1-9][0-9]*$ ]] || { echo "VERSION must be a positive number, not \"$VERSION\"" >&2; exit 1; }
+echo "Building version $VERSION"
+
 mkdir -p "$OUT"
-./gradlew --console=plain testDebugUnitTest assembleDebug assembleRelease
+./gradlew --console=plain -PappVersion="$VERSION" testDebugUnitTest assembleDebug assembleRelease
 
 describe() {
   local apk=$1
@@ -67,3 +82,4 @@ echo "signed by $(sed -n 's/^Signer #1 certificate DN: //p' <<<"$certs")" \
   "($(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<<"$certs"))"
 echo
 echo "In $OUT, ready for https://github.com/nicolasbrailo/AstroDock/releases/new"
+echo "Name the tag V$VERSION, on a commit that has been pushed"
