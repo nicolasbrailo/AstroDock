@@ -1,6 +1,5 @@
 import java.net.URI
 import java.security.MessageDigest
-import java.util.zip.ZipInputStream
 
 // The wake word listener: a part of AstroDock (app/ depends on it) that runs
 // in a process of its own, ":wakeword", kept in a module of its own so that
@@ -30,19 +29,13 @@ android {
     }
 }
 
-// The speech model, which is 40 MB and so isn't in git: downloaded once into
-// Gradle's own cache, checked against the hash it had when it was picked, and
-// unpacked into the APK's assets as Vosk's StorageService expects them, with a
-// uuid file that tells it when the copy on the device is out of date.
-abstract class VoskModelTask : DefaultTask() {
+// The wake word models (see WakeWordModels), which aren't in git: downloaded
+// once into Gradle's own cache, checked against the hash they had when they
+// were picked, and copied into the APK's assets under wakeword/.
+abstract class ModelFilesTask : DefaultTask() {
+    // Asset name to "<url> <sha256>"
     @get:Input
-    abstract val url: Property<String>
-
-    @get:Input
-    abstract val sha256: Property<String>
-
-    @get:Input
-    abstract val assetName: Property<String>
+    abstract val files: MapProperty<String, String>
 
     @get:Internal
     abstract val cacheDir: DirectoryProperty
@@ -51,37 +44,27 @@ abstract class VoskModelTask : DefaultTask() {
     abstract val outputDir: DirectoryProperty
 
     @TaskAction
-    fun unpack() {
-        val zip = cacheDir.file("${sha256.get()}.zip").get().asFile
-        if (!zip.exists() || hash(zip) != sha256.get()) {
-            zip.parentFile.mkdirs()
-            val part = File(zip.path + ".part")
-            logger.lifecycle("Downloading ${url.get()}")
-            URI(url.get()).toURL().openStream().use { input -> part.outputStream().use { input.copyTo(it) } }
-            val got = hash(part)
-            if (got != sha256.get()) {
-                part.delete()
-                throw GradleException("${url.get()} has sha256 $got, expected ${sha256.get()}")
-            }
-            part.renameTo(zip)
-        }
-
-        val target = outputDir.dir(assetName.get()).get().asFile
+    fun fetch() {
+        val target = outputDir.dir(WAKEWORD_ASSETS).get().asFile
         target.deleteRecursively()
         target.mkdirs()
-        ZipInputStream(zip.inputStream().buffered()).use { entries ->
-            while (true) {
-                val entry = entries.nextEntry ?: break
-                // The archive has everything under one top level directory
-                val path = entry.name.substringAfter('/', "")
-                if (path.isEmpty() || entry.isDirectory) continue
-                if (path.split('/').any { it == ".." }) throw GradleException("Bad path in model: ${entry.name}")
-                val file = File(target, path)
-                file.parentFile.mkdirs()
-                file.outputStream().use { entries.copyTo(it) }
+        for ((name, source) in files.get()) {
+            val (url, sha256) = source.split(' ')
+            val cached = cacheDir.file(sha256).get().asFile
+            if (!cached.exists() || hash(cached) != sha256) {
+                cached.parentFile.mkdirs()
+                val part = File(cached.path + ".part")
+                logger.lifecycle("Downloading $url")
+                URI(url).toURL().openStream().use { input -> part.outputStream().use { input.copyTo(it) } }
+                val got = hash(part)
+                if (got != sha256) {
+                    part.delete()
+                    throw GradleException("$url has sha256 $got, expected $sha256")
+                }
+                part.renameTo(cached)
             }
+            cached.copyTo(File(target, name))
         }
-        File(target, "uuid").writeText(sha256.get())
     }
 
     private fun hash(file: File): String {
@@ -96,22 +79,38 @@ abstract class VoskModelTask : DefaultTask() {
         }
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
+
+    private companion object {
+        // WakeWordModels.ASSETS
+        const val WAKEWORD_ASSETS = "wakeword"
+    }
 }
 
-val voskModel = tasks.register<VoskModelTask>("voskModel") {
-    // The small US English one, made for phones. Its vocabulary has both
-    // "hey" and "portal".
-    url.set("https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip")
-    sha256.set("30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498")
-    // WakeWord.MODEL_ASSET
-    assetName.set("model-en-us")
-    cacheDir.set(File(gradle.gradleUserHomeDir, "caches/astrodock-vosk"))
-    outputDir.set(layout.buildDirectory.dir("generated/vosk"))
+val modelFiles = tasks.register<ModelFilesTask>("wakewordModels") {
+    // openWakeWord's (https://github.com/dscripka/openWakeWord), from its
+    // v0.5.1 release. The first two turn sound into features and are Apache
+    // 2.0; the third is the phrase, "hey rhasspy", one of its pretrained ones,
+    // which are CC BY-NC-SA 4.0: fine for AstroDock, not for selling it.
+    val release = "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1"
+    files.put(
+        "melspectrogram.tflite",
+        "$release/melspectrogram.tflite 96fa0adccb6e8cf95cb14465409a1a2898ee4a96a85bb9ed3c7eb0e68bf163e8",
+    )
+    files.put(
+        "embedding.tflite",
+        "$release/embedding_model.tflite c0aea21eb84a4ce90a08c870da41b7a7173b45269e6a3207c71d67c40f3a59d8",
+    )
+    files.put(
+        "phrase.tflite",
+        "$release/hey_rhasspy_v0.1.tflite 01d2526b45068f565aa3849d6ec2b7abae099154fc1b496f9ef20de9ef241fe9",
+    )
+    cacheDir.set(File(gradle.gradleUserHomeDir, "caches/astrodock-wakeword"))
+    outputDir.set(layout.buildDirectory.dir("generated/wakeword"))
 }
 
 androidComponents {
     onVariants { variant ->
-        variant.sources.assets?.addGeneratedSourceDirectory(voskModel, VoskModelTask::outputDir)
+        variant.sources.assets?.addGeneratedSourceDirectory(modelFiles, ModelFilesTask::outputDir)
     }
 }
 
@@ -120,6 +119,6 @@ dependencies {
     implementation(libs.androidx.appcompat)
     implementation(libs.material)
     implementation(libs.androidx.preference.ktx)
-    implementation(libs.vosk.android)
+    implementation(libs.tensorflow.lite)
     testImplementation(libs.junit)
 }

@@ -253,6 +253,33 @@
         android:textSize="18sp"
         android:visibility="gone" />
 
+    <!-- The wake word was heard and what follows is being recorded
+         (Listening). Darkens the pictures rather than hiding them. Not
+         clickable, so touches go through to the slideshow. -->
+    <FrameLayout
+        android:id="@+id/listening"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#B3000000"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="@string/listening"
+            android:textColor="@android:color/white"
+            android:textSize="56sp" />
+    </FrameLayout>
+
+    <!-- The flash as the wake word is heard, over everything but the night -->
+    <View
+        android:id="@+id/listening_flash"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@android:color/white"
+        android:visibility="gone" />
+
     <!-- Covers everything during the night hours, when the screen can't be
          kept off (see SlideshowController.checkNight). On top, so it also
          takes the first touch, which only uncovers the pictures. -->

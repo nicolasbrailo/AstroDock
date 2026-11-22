@@ -20,14 +20,30 @@ object ListenerStatus {
     // The microphone's level in dBFS, null while it is closed
     var level: Double? = null
         private set
-    // What the recogniser last made of the sound, finished or not
-    var hearing: String? = null
+    // The latest score, and the highest in the last PEAK_MILLIS with when it
+    // was, which is what shows how near a phrase came
+    var score: Float? = null
         private set
-    // Wall clock of the last time the phrase was heard, and what was heard
+    var peak: Float? = null
+        private set
+    // Whether the room is quiet enough that nothing is being scored
+    var skipping = false
+        private set
+    private var peakAt = 0L
+    // Wall clock of the last time the phrase was heard, and its score
     var lastHeardAt: Long? = null
         private set
-    var lastHeard: String? = null
+    var lastHeardScore: Float? = null
         private set
+    // The last recording after the wake word: how long, why it ended
+    // (Utterance.End, in lower case) and when
+    var lastRecordingMillis: Long? = null
+        private set
+    var lastRecordingEnd: String? = null
+        private set
+    var lastRecordingAt: Long? = null
+        private set
+    private const val PEAK_MILLIS = 10_000L
 
     private val listeners = mutableSetOf<() -> Unit>()
     private val main = Handler(Looper.getMainLooper())
@@ -42,18 +58,40 @@ object ListenerStatus {
 
     fun level(dbfs: Double?) {
         level = dbfs
+        if (dbfs == null) {
+            score = null
+            peak = null
+            skipping = false
+        }
         changed()
     }
 
-    fun hearing(text: String) {
-        if (text == hearing) return
-        hearing = text
+    fun skipping(value: Boolean) {
+        skipping = value
         changed()
     }
 
-    fun heard(text: String) {
+    fun score(value: Float) {
+        score = value
+        val now = System.currentTimeMillis()
+        val current = peak
+        if (current == null || value >= current || now - peakAt > PEAK_MILLIS) {
+            peak = value
+            peakAt = now
+        }
+        changed()
+    }
+
+    fun heard(score: Float) {
         lastHeardAt = System.currentTimeMillis()
-        lastHeard = text
+        lastHeardScore = score
+        changed()
+    }
+
+    fun recorded(millis: Long, end: String) {
+        lastRecordingMillis = millis
+        lastRecordingEnd = end
+        lastRecordingAt = System.currentTimeMillis()
         changed()
     }
 

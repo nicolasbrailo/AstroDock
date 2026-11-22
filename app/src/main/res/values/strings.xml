@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">AstroDock</string>
     <string name="state_permission_label">read what AstroDock knows about the room</string>
+    <string name="listening">I\'m listening…</string>
 
     <string name="settings_title">Settings</string>
     <string name="settings_category_server">Immich server</string>

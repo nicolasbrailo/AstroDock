@@ -18,11 +18,7 @@ import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
-import org.json.JSONException
-import org.json.JSONObject
-import org.vosk.Model
-import org.vosk.Recognizer
-import org.vosk.android.StorageService
+import java.io.File
 import java.io.IOException
 
 // Listens for the wake word whenever ListenGate allows, and chimes when it
@@ -35,16 +31,19 @@ import java.io.IOException
 // AGENTS.md), which is why this is a process of AstroDock's rather than an app
 // of its own: the home screen being in front is what lets it hear.
 //
-// Everything here runs on the main thread: the broadcasts arrive on it, and
-// MicReader reports on it.
+// Everything here runs on the main thread (the broadcasts arrive on it, and
+// MicReader reports on it), but for the samples, which are scored on the
+// microphone's thread.
 class ListenerService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private lateinit var chime: Chime
     private var state: AstroDockState? = null
-    private var model: Model? = null
+    private var models: WakeWordModels? = null
     private var modelProblem: String? = null
-    private var recognizer: Recognizer? = null
     private var mic: MicReader? = null
+    // Read on the microphone's thread; set from the settings on every update
+    @Volatile
+    private var threshold = WakewordSettings.DEFAULT_THRESHOLD / 100f
     // The source the open microphone records from, to notice it changing
     private var micSource: Int? = null
     // After the microphone failed: when to try again, and why it failed
@@ -53,6 +52,9 @@ class ListenerService : Service() {
     private var shownText: String? = null
     private val retry = Runnable { update() }
     private var levelLoggedAt = 0L
+    // Between hearing the wake word and the end of what is said after it,
+    // while AstroDock shows that it is listening
+    private var recording = false
 
     private val stateReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -74,12 +76,6 @@ class ListenerService : Service() {
             }
         }
 
-        override fun onPartial(hypothesis: String) {
-            val text = textOf(hypothesis, "partial") ?: return
-            if (text.isNotEmpty()) ListenerStatus.hearing(text)
-        }
-
-        override fun onResult(hypothesis: String) = onUtterance(hypothesis)
         override fun onError(e: Exception) = micFailed(e)
     }
 
@@ -113,17 +109,17 @@ class ListenerService : Service() {
             AstroDockState.PERMISSION,
         )
 
-        // Copied out of the APK the first time, and after an update that
-        // brings a different model; a few seconds either way
-        StorageService.unpack(this, WakeWord.MODEL_ASSET, WakeWord.MODEL_DIR, { loaded ->
-            model = loaded
-            Log.i(TAG, "Model loaded")
-            update()
-        }, { e ->
-            Log.e(TAG, "Can't load the model", e)
+        // A few MB, read in well under a second
+        try {
+            models = WakeWordModels(this)
+            Log.i(TAG, "Models loaded")
+        } catch (e: Exception) {
+            // IOException for a missing asset, IllegalArgumentException for
+            // one TensorFlow Lite can't read
+            Log.e(TAG, "Can't load the models", e)
             modelProblem = getString(R.string.problem_model, e.message)
-            update()
-        })
+        }
+        update()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -136,8 +132,8 @@ class ListenerService : Service() {
         main.removeCallbacks(retry)
         unregisterReceiver(stateReceiver)
         closeMic()
-        model?.close()
-        model = null
+        models?.close()
+        models = null
         chime.release()
         ListenerStatus.set(listening = false, refusal = Refusal.DISABLED, problem = null)
         super.onDestroy()
@@ -154,12 +150,13 @@ class ListenerService : Service() {
         }
         val refusal = ListenGate.refusal(enabled, WakewordSettings.micGranted(this), state, onScreen)
         val source = WakewordSettings.source(this)
+        threshold = WakewordSettings.threshold(this) / 100f
         // A new source needs a new recording
         if (micSource != null && micSource != source) closeMic()
         val now = SystemClock.elapsedRealtime()
         when {
             refusal != null -> closeMic()
-            model == null -> closeMic()
+            models == null -> closeMic()
             now < retryAt -> closeMic()
             else -> openMic(source)
         }
@@ -178,14 +175,10 @@ class ListenerService : Service() {
 
     private fun openMic(source: Int) {
         if (mic != null) return
-        val model = model ?: return
+        val models = models ?: return
         try {
-            val newRecognizer = Recognizer(model, WakeWord.SAMPLE_RATE, WakeWord.GRAMMAR)
-            // Each word's confidence, for the log, which is how a false
-            // alarm can be told from a real one
-            newRecognizer.setWords(true)
-            recognizer = newRecognizer
-            val newMic = MicReader(newRecognizer, WakeWord.SAMPLE_RATE.toInt(), source, micListener)
+            val pipeline = Pipeline(models)
+            val newMic = MicReader(WakeWordDetector.SAMPLE_RATE, source, micListener, pipeline::accept)
             mic = newMic
             micSource = source
             newMic.start()
@@ -201,12 +194,104 @@ class ListenerService : Service() {
         mic?.stop()
         mic = null
         micSource = null
-        recognizer?.close()
-        recognizer = null
+        // A recording cut short: AstroDock is told it's over
+        if (recording) recorded(null)
         if (wasOpen) {
             ListenerStatus.level(null)
             Log.i(TAG, "Stopped listening")
         }
+    }
+
+    // What the microphone's samples go through, on its thread: the detector
+    // until the wake word is heard, then what is said after it, then the
+    // detector again. Afresh with each opening of the microphone, so a phrase
+    // can't be made of sound from before it last closed.
+    private inner class Pipeline(private val models: WakeWordModels) {
+        private var detector = WakeWordDetector(models)
+        private var trigger = WakeWordTrigger()
+        private var utterance: Utterance? = null
+        private var reportedAt = SystemClock.elapsedRealtime()
+        private var wasSkipping = false
+
+        fun accept(samples: ShortArray, count: Int) {
+            val current = utterance
+            if (current != null) {
+                if (current.accept(samples, count)) finish(current)
+                return
+            }
+            val processed = detector.chunksProcessed
+            val scores = detector.accept(samples, count)
+            for (score in scores) {
+                if (onScore(score)) {
+                    utterance = Utterance(detector.noiseFloor ?: DEFAULT_FLOOR_DB)
+                    // The rest of this read is lost, a tenth of a second at most
+                    return
+                }
+            }
+            // Nothing run through the models: the room is quiet
+            val skipping = scores.isEmpty() && detector.chunksProcessed == processed
+            if (skipping != wasSkipping) {
+                wasSkipping = skipping
+                main.post { ListenerStatus.skipping(skipping) }
+            }
+            val now = SystemClock.elapsedRealtime()
+            if (now - reportedAt >= SKIP_LOG_MILLIS) {
+                reportedAt = now
+                Log.d(TAG, "Ran the models on %d of %d chunks so far".format(
+                    detector.chunksProcessed, detector.chunksIn))
+            }
+        }
+
+        // Whether this score is the wake word
+        private fun onScore(score: Float): Boolean {
+            val heard = trigger.offer(score, threshold)
+            // The near misses too, which is what tuning the threshold goes by
+            if (score >= LOG_SCORE) Log.d(TAG, "Score %.2f".format(score))
+            main.post {
+                ListenerStatus.score(score)
+                if (heard) {
+                    Log.i(TAG, "Heard the wake word, score %.2f".format(score))
+                    chime.play()
+                    ListenerStatus.heard(score)
+                    recording = true
+                    sendListening(true)
+                }
+            }
+            return heard
+        }
+
+        private fun finish(done: Utterance) {
+            utterance = null
+            // The windows hold sound from before the recording
+            detector = WakeWordDetector(models)
+            trigger = WakeWordTrigger()
+            val file = File(filesDir, LAST_RECORDING)
+            try {
+                file.writeBytes(Utterance.wav(done.pcm(), WakeWordDetector.SAMPLE_RATE))
+            } catch (e: IOException) {
+                Log.w(TAG, "Can't save the recording", e)
+            }
+            Log.i(TAG, "Recorded %d ms, ended by %s".format(done.durationMillis, done.end))
+            main.post { recorded(done) }
+        }
+    }
+
+    // A recording ended, null if cut short by the microphone closing
+    private fun recorded(done: Utterance?) {
+        if (!recording) return
+        recording = false
+        sendListening(false)
+        if (done != null) ListenerStatus.recorded(done.durationMillis, done.end!!.name.lowercase())
+    }
+
+    // Tells AstroDock's slideshow to show, or stop showing, that it is listening
+    private fun sendListening(listening: Boolean) {
+        sendBroadcast(
+            Intent(AstroDockState.ACTION_LISTENING)
+                .setPackage(AstroDockState.ASTRODOCK_PACKAGE)
+                .putExtra(AstroDockState.EXTRA_LISTENING, listening),
+            AstroDockState.PERMISSION,
+        )
     }
 
     // Usually another app holding the microphone, which up to Android 9 makes
@@ -219,33 +304,6 @@ class ListenerService : Service() {
         main.removeCallbacks(retry)
         main.postDelayed(retry, RETRY_MILLIS)
         update()
-    }
-
-    // An utterance, once Vosk decides it has ended: {"text": "...", "result":
-    // [{"word": "hey", "conf": 1.0, ...}, ...]}
-    private fun onUtterance(hypothesis: String) {
-        val json = try {
-            JSONObject(hypothesis)
-        } catch (e: JSONException) {
-            Log.w(TAG, "Can't read $hypothesis", e)
-            return
-        }
-        val text = json.optString("text")
-        if (text.isEmpty()) return
-        // Everything, so a phrase that wasn't recognised shows what it was
-        // taken for instead
-        Log.d(TAG, "Utterance \"$text\": ${json.optJSONArray("result")}")
-        ListenerStatus.hearing(text)
-        if (!WakeWord.heard(text)) return
-        Log.i(TAG, "Heard \"$text\"")
-        chime.play()
-        ListenerStatus.heard(text)
-    }
-
-    private fun textOf(hypothesis: String, key: String): String? = try {
-        JSONObject(hypothesis).optString(key)
-    } catch (e: JSONException) {
-        null
     }
 
     private fun showStatus(text: String) {
@@ -274,6 +332,13 @@ class ListenerService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val RETRY_MILLIS = 10_000L
         private const val LEVEL_LOG_MILLIS = 3_000L
+        private const val SKIP_LOG_MILLIS = 30_000L
+        // For a recording that starts before the floor is known
+        private const val DEFAULT_FLOOR_DB = -70.0
+        // In filesDir, played back by the Wake Word screen
+        const val LAST_RECORDING = "last_recording.wav"
+        // Scores below this aren't worth a line in the log
+        private const val LOG_SCORE = 0.1f
 
         fun intent(context: Context) = Intent(context, ListenerService::class.java)
 

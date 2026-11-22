@@ -24,6 +24,10 @@ object StateBroadcast {
     // The record as JSON text, exactly as <prefix>state carries it
     const val EXTRA_STATE = "state"
     const val PERMISSION = "com.nicobrailo.astrodock.permission.STATE"
+    // The other way, from the wake word listener: it is recording what is
+    // said after the wake word (true), or that is over (false). See Listening.
+    const val ACTION_LISTENING = "com.nicobrailo.astrodock.action.LISTENING"
+    const val EXTRA_LISTENING = "listening"
 
     fun send(context: Context, state: JSONObject) {
         val intent = Intent(ACTION_STATE).putExtra(EXTRA_STATE, state.toString())

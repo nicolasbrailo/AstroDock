@@ -14,6 +14,11 @@ object WakewordSettings {
     const val PREFS = "wakeword"
     const val KEY_ENABLED = "enabled"
     const val KEY_SOURCE = "source"
+    const val KEY_THRESHOLD = "threshold"
+    // The score, as a percentage, that counts as hearing the phrase:
+    // openWakeWord's default. Lower hears it more readily, and other sounds
+    // too.
+    const val DEFAULT_THRESHOLD = 50
 
     // Which of the device's audio inputs to record. Which one gives a usable
     // signal is up to the device's audio setup, hence a setting; the values
@@ -34,6 +39,8 @@ object WakewordSettings {
         val name = prefs(context).getString(KEY_SOURCE, DEFAULT_SOURCE)
         return SOURCES[name] ?: SOURCES.getValue(DEFAULT_SOURCE)
     }
+
+    fun threshold(context: Context): Int = prefs(context).getInt(KEY_THRESHOLD, DEFAULT_THRESHOLD)
 
     private fun prefs(context: Context) = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 

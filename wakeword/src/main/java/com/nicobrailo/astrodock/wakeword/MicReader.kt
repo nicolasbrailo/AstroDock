@@ -6,30 +6,27 @@ import android.media.AudioRecord
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import org.vosk.Recognizer
 import java.io.IOException
 import kotlin.math.log10
 import kotlin.math.sqrt
 
-// Reads the microphone on a thread of its own and feeds it to the recogniser.
-// It does what Vosk's SpeechService does, and also measures how loud the
-// sound is, which is the quickest way to tell a microphone that gives us
-// silence from a phrase that isn't recognised.
+// Reads the microphone on a thread of its own and hands the samples to
+// `samples`, on that thread. It also measures how loud the sound is, which is
+// the quickest way to tell a microphone that gives us silence from a phrase
+// that isn't recognised.
 //
-// Everything it reports arrives on the main thread. The recogniser is only
-// used on the reader's thread, and is the caller's to close after stop().
+// What it reports to the Listener arrives on the main thread.
 class MicReader(
-    private val recognizer: Recognizer,
     private val sampleRate: Int,
     // A MediaRecorder.AudioSource (see WakewordSettings.source)
     private val source: Int,
     private val listener: Listener,
+    // Called on the reader's thread with each read, until stop() returns
+    private val samples: (ShortArray, Int) -> Unit,
 ) {
     interface Listener {
         // The sound's level in dBFS, a few times a second
         fun onLevel(dbfs: Double)
-        fun onPartial(hypothesis: String)
-        fun onResult(hypothesis: String)
         fun onError(e: Exception)
     }
 
@@ -64,7 +61,7 @@ class MicReader(
         thread = Thread({ read() }, "MicReader").also { it.start() }
     }
 
-    // Waits for the thread, so the recogniser is free once this returns
+    // Waits for the thread, so `samples` is no longer called once this returns
     fun stop() {
         running = false
         thread?.join()
@@ -82,7 +79,6 @@ class MicReader(
             return
         }
         val buffer = ShortArray(sampleRate / CHUNKS_PER_SECOND)
-        var lastPartial: String? = null
         var sumSquares = 0.0
         var counted = 0
         try {
@@ -100,17 +96,7 @@ class MicReader(
                     sumSquares = 0.0
                     counted = 0
                 }
-                if (recognizer.acceptWaveForm(buffer, read)) {
-                    val result = recognizer.result
-                    lastPartial = null
-                    main.post { listener.onResult(result) }
-                } else {
-                    val partial = recognizer.partialResult
-                    if (partial != lastPartial) {
-                        lastPartial = partial
-                        main.post { listener.onPartial(partial) }
-                    }
-                }
+                samples(buffer, read)
             }
         } catch (e: IOException) {
             Log.w(TAG, "Microphone failed", e)

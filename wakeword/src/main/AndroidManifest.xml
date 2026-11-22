@@ -10,7 +10,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- All of it in the process ":wakeword", so Vosk's native code can't take
+    <!-- All of it in the process ":wakeword", so TensorFlow Lite's native code can't take
          the home screen down with it, as the calls are in ":call". The
          settings screen too, since it shows ListenerStatus, which only exists
          in the listener's process, and the receiver, which reads the

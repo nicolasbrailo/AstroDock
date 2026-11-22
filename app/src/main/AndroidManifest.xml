@@ -222,6 +222,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- The wake word listener (wakeword/, in its own process) saying it
+             is recording, for the slideshow to show (Listening) -->
+        <receiver
+            android:name=".ListeningReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.nicobrailo.astrodock.action.LISTENING" />
+            </intent-filter>
+        </receiver>
+
         <!-- Rings the alarms, and sets the next one again whenever the system
              may have lost it or moved it: a reboot, or the clock or the time
              zone being set -->

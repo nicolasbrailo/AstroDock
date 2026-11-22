@@ -2,30 +2,37 @@
     <string name="wakeword_title">Wake Word</string>
     <string name="notification_channel">Listener</string>
 
-    <string name="pref_enabled_title">Listen for \"Hey Portal\" in the background</string>
+    <string name="pref_enabled_title">Listen for \"Hey Rhasspy\" in the background</string>
     <string name="pref_enabled_summary">Only while the camera sees somebody and AstroDock\'s pictures are on screen. Chimes when it hears it.</string>
     <string name="pref_live_title">While this screen is open it listens, whatever AstroDock says</string>
     <string name="pref_status_title">Status</string>
     <string name="pref_level_title">Microphone level</string>
-    <string name="pref_hearing_title">What it hears</string>
+    <string name="pref_score_title">Score (1 is the phrase)</string>
+    <string name="pref_threshold_title">Score that counts as hearing it (%)</string>
+    <string name="pref_threshold_summary">Lower hears it more readily, and other sounds too</string>
     <string name="pref_heard_title">Wake word</string>
     <string name="pref_debug_title">Debugging</string>
     <string name="pref_source_title">Audio input</string>
     <string name="level_closed">Microphone closed</string>
     <string name="level_value">%1$s  %2$.0f dB</string>
-    <string name="hearing_nothing">Nothing yet</string>
-    <string name="heard_now">HEARD \"%1$s\"</string>
+    <string name="score_none">Not listening</string>
+    <string name="score_quiet">Quiet, so not scoring (it starts at the first sound)</string>
+    <string name="score_value">%1$s  %2$.2f (highest in the last 10 s: %3$.2f)</string>
+    <string name="heard_now">HEARD (score %1$.2f)</string>
     <string name="pref_microphone_title">Allow the microphone</string>
     <string name="pref_microphone_summary">Needed to listen. tools/setup-device.sh grants it too.</string>
     <string name="pref_chime_title">Play the chime</string>
+    <string name="pref_recording_title">Last recording after the wake word</string>
+    <string name="recording_none">Nothing recorded yet. Tap to play it once there is.</string>
+    <string name="recording_value">At %1$s, %2$.1f s, ended by %3$s. Tap to play it.</string>
     <string name="pref_chime_summary">What it plays when it hears the wake word</string>
 
     <string name="status_starting">Starting</string>
-    <string name="status_loading">Loading the speech model</string>
-    <string name="status_listening">Listening for \"Hey Portal\"</string>
+    <string name="status_loading">Loading the models</string>
+    <string name="status_listening">Listening for \"Hey Rhasspy\"</string>
     <string name="status_not_listening">Not listening: %1$s</string>
     <string name="status_never_heard">Not heard yet</string>
-    <string name="status_last_heard">Last heard at %1$s: \"%2$s\"</string>
+    <string name="status_last_heard">Last heard at %1$s (score %2$.2f)</string>
 
     <string name="refusal_disabled">turned off</string>
     <string name="refusal_no_microphone">no microphone permission</string>
@@ -36,6 +43,6 @@
     <string name="refusal_blind">the camera can\'t see</string>
     <string name="refusal_nobody">nobody in view</string>
 
-    <string name="problem_model">Can\'t load the speech model: %1$s</string>
+    <string name="problem_model">Can\'t load the models: %1$s</string>
     <string name="problem_microphone">Can\'t open the microphone (another app may be using it): %1$s</string>
 </resources>

@@ -27,6 +27,10 @@ data class AstroDockState(
         const val ACTION_STATE = "com.nicobrailo.astrodock.action.STATE"
         const val ACTION_REQUEST_STATE = "com.nicobrailo.astrodock.action.REQUEST_STATE"
         const val EXTRA_STATE = "state"
+        // The other way: the wake word was heard and what follows is being
+        // recorded (true), or that is over (false), for the slideshow to show
+        const val ACTION_LISTENING = "com.nicobrailo.astrodock.action.LISTENING"
+        const val EXTRA_LISTENING = "listening"
         // Signature level, declared by AstroDock
         const val PERMISSION = "com.nicobrailo.astrodock.permission.STATE"
 

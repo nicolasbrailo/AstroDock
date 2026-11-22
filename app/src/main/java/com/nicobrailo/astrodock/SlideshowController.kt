@@ -186,6 +186,10 @@ class SlideshowController(
     // Whatever is wrong with the broker, in a corner of the home screen
     private val alert: TextView = root.findViewById(R.id.alert)
     private val onAlert: (String?) -> Unit = { showAlert(it) }
+    // The wake word listener recording what is said after the wake word
+    private val listening: View = root.findViewById(R.id.listening)
+    private val listeningFlash: View = root.findViewById(R.id.listening_flash)
+    private val onListening: (Boolean) -> Unit = { showListening(it, flash = it) }
     // What was last reported, so the same picture isn't republished every time
     // the overlay is redrawn
     private var reportedPhoto: String? = null
@@ -261,6 +265,10 @@ class SlideshowController(
         reporter.setCommandListener(onCommand)
         // Whatever was announced or ended while it wasn't on screen
         showAnnouncement()
+        // Listening already, as when the screensaver hands over to the home
+        // screen in the middle of it: no flash, which was for the wake word
+        Listening.addListener(onListening)
+        showListening(Listening.active, flash = false)
         // The screensaver is what runs all night, with nobody looking, so it
         // isn't the place to complain about the broker
         if (interactive) reporter.setAlertListener(onAlert)
@@ -303,6 +311,8 @@ class SlideshowController(
         reporter.onSlideshowShown(reporterSource, shown = false, dark = false)
         reporter.clearCommandListener(onCommand)
         reporter.clearAlertListener(onAlert)
+        Listening.removeListener(onListening)
+        showListening(false, flash = false)
         nightJob?.cancel()
         setDark(false, COVER_STOP)
         // A grace still running would otherwise keep its line, and its ticker,
@@ -668,6 +678,31 @@ class SlideshowController(
         restartTimer()
         reporter.refresh()
         Log.i(TAG, "Album filter: $filter")
+    }
+
+    // Darkens the pictures and says it is listening, after a white flash when
+    // the wake word was just heard, so it is noticed from across the room
+    private fun showListening(on: Boolean, flash: Boolean) {
+        listening.animate().cancel()
+        listeningFlash.animate().cancel()
+        if (flash) {
+            listeningFlash.alpha = FLASH_ALPHA
+            listeningFlash.visibility = View.VISIBLE
+            listeningFlash.animate().alpha(0f).setDuration(FLASH_MILLIS)
+                .withEndAction { listeningFlash.visibility = View.GONE }
+        } else {
+            listeningFlash.visibility = View.GONE
+        }
+        if (on) {
+            listening.alpha = if (flash) 0f else 1f
+            listening.visibility = View.VISIBLE
+            listening.animate().alpha(1f).setDuration(FLASH_MILLIS)
+        } else if (listening.visibility == View.VISIBLE && started) {
+            listening.animate().alpha(0f).setDuration(FLASH_MILLIS)
+                .withEndAction { listening.visibility = View.GONE }
+        } else {
+            listening.visibility = View.GONE
+        }
     }
 
     // Shows the reporter's announcement, which it keeps while no slideshow is
@@ -1199,6 +1234,11 @@ class SlideshowController(
         // Where the errors the MQTT state lists come from
         const val ERROR_IMMICH = "immich"
         const val ERROR_WEATHER = "weather"
+
+        // The flash when the wake word is heard, and the overlay fading in
+        // and out
+        const val FLASH_ALPHA = 0.8f
+        const val FLASH_MILLIS = 300L
 
         // A swipe moves to the neighbour if it went this fraction of the screen
         // width, or was a fling
