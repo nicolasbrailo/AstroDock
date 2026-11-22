@@ -219,10 +219,16 @@ adb shell am force-stop "$PKG"
 prefs "$current" | adb shell "run-as $PKG sh -c 'mkdir -p shared_prefs && cat > $PREFS'"
 # Runtime permissions, which adb can grant without the dialog. Revoking them
 # kills the app, which is stopped anyway.
+# The microphone is the wake word's too (the Wake Word app, whose settings
+# are in shared_prefs/wakeword.xml), so turning calls off leaves it alone
+# while the wake word is on.
 if [[ -n $calls ]]; then
   for permission in android.permission.CAMERA android.permission.RECORD_AUDIO; do
     if [[ $calls == true ]]; then
       adb shell pm grant "$PKG" "$permission"
+    elif [[ $permission == android.permission.RECORD_AUDIO ]] && adb shell "run-as $PKG cat shared_prefs/wakeword.xml" 2>/dev/null \
+        | grep -q 'name="enabled" value="true"'; then
+      echo "Leaving the microphone granted: the wake word uses it"
     else
       adb shell pm revoke "$PKG" "$permission"
     fi

@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Keys must match WakewordSettings and WakewordFragment -->
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <SwitchPreferenceCompat
+        android:defaultValue="false"
+        android:key="enabled"
+        android:summary="@string/pref_enabled_summary"
+        android:title="@string/pref_enabled_title"
+        app:iconSpaceReserved="false" />
+
+    <Preference
+        android:key="microphone"
+        android:summary="@string/pref_microphone_summary"
+        android:title="@string/pref_microphone_title"
+        app:iconSpaceReserved="false" />
+
+    <PreferenceCategory
+        android:title="@string/pref_live_title"
+        app:iconSpaceReserved="false">
+
+        <Preference
+            android:key="status"
+            android:selectable="false"
+            android:title="@string/pref_status_title"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            android:key="level"
+            android:selectable="false"
+            android:title="@string/pref_level_title"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            android:key="hearing"
+            android:selectable="false"
+            android:title="@string/pref_hearing_title"
+            app:iconSpaceReserved="false" />
+
+        <Preference
+            android:key="heard"
+            android:selectable="false"
+            android:title="@string/pref_heard_title"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+
+    <PreferenceCategory
+        android:title="@string/pref_debug_title"
+        app:iconSpaceReserved="false">
+
+        <ListPreference
+            android:defaultValue="voice_recognition"
+            android:entries="@array/source_names"
+            android:entryValues="@array/source_values"
+            android:key="source"
+            android:title="@string/pref_source_title"
+            app:iconSpaceReserved="false"
+            app:useSimpleSummaryProvider="true" />
+
+        <Preference
+            android:key="chime"
+            android:summary="@string/pref_chime_summary"
+            android:title="@string/pref_chime_title"
+            app:iconSpaceReserved="false" />
+    </PreferenceCategory>
+</PreferenceScreen>

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- RECORD_AUDIO is AstroDock's already, for calls. The listener's
+         notification, which a foreground service must have, is only asked
+         for from Android 13, which no Portal runs. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- All of it in the process ":wakeword", so Vosk's native code can't take
+         the home screen down with it, as the calls are in ":call". The
+         settings screen too, since it shows ListenerStatus, which only exists
+         in the listener's process, and the receiver, which reads the
+         settings: SharedPreferences are cached per process. -->
+    <application>
+
+        <!-- The wake word, as an app in the app list (and in any other
+             launcher), like the alarms and the calls: its own icon, and a
+             task of its own -->
+        <activity
+            android:name=".WakewordActivity"
+            android:exported="true"
+            android:icon="@mipmap/ic_wakeword"
+            android:label="@string/wakeword_title"
+            android:process=":wakeword"
+            android:roundIcon="@mipmap/ic_wakeword"
+            android:taskAffinity="${applicationId}.wakeword"
+            android:theme="@style/Theme.Wakeword">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".ListenerService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"
+            android:process=":wakeword" />
+
+        <receiver
+            android:name=".StartReceiver"
+            android:exported="false"
+            android:process=":wakeword">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>

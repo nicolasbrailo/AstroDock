@@ -70,6 +70,15 @@
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
+    <!-- The state record broadcast on the device (mqtt/StateBroadcast.kt),
+         for the wake word listener (wakeword/, in its own process) and any
+         app signed with the same key -->
+    <permission
+        android:name="com.nicobrailo.astrodock.permission.STATE"
+        android:label="@string/state_permission_label"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.nicobrailo.astrodock.permission.STATE" />
+
     <!-- Lets AppListActivity see the apps it can launch (Android 11+ hides
          other packages otherwise) -->
     <queries>
@@ -199,6 +208,17 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Sends the state record to an app that has just started
+             (StateRequestReceiver) -->
+        <receiver
+            android:name=".mqtt.StateRequestReceiver"
+            android:exported="true"
+            android:permission="com.nicobrailo.astrodock.permission.STATE">
+            <intent-filter>
+                <action android:name="com.nicobrailo.astrodock.action.REQUEST_STATE" />
             </intent-filter>
         </receiver>
 

@@ -426,6 +426,18 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   find its own old record and refuse its own name. When testing it, stop the
   app before publishing a fake record: its last will replaces the fake when
   the process dies.
+  `mqtt/StateBroadcast.kt`: the `state` record also goes out on the device,
+  for what works alongside AstroDock outside its main process (the wake word
+  listener, in `:wakeword`) and any app signed with the same key, as a
+  broadcast (`com.nicobrailo.astrodock.action.STATE`, the JSON in the extra
+  `state`) every time it is published, whether or not MQTT is set up; that is
+  why `applySettings()` watches the screen and sensors before it looks at the
+  broker settings. It is the whole record rather than events, so a listener
+  that starts late or misses one is never left with a stale picture: it sends
+  `action.REQUEST_STATE` to the package as it starts, and
+  `StateRequestReceiver` answers with the record as it is now. Both need the
+  signature permission `com.nicobrailo.astrodock.permission.STATE`, since
+  whether somebody is in the room is nobody else's business.
 - `SystemSettingsFragment.kt`: the System tab. At the top, a list of what is
   missing and what doesn't work without it (each `Item`'s `missing`), then a
   note to run `tools/setup-device.sh`, which grants all of it; "Everything is
@@ -746,7 +758,66 @@ All sources are in `app/src/main/java/com/nicobrailo/astrodock/`.
   long-press menu can still force the button on or off per app, and that choice
   wins over both the list and the automatic detection.
 
-Unit tests are in `app/src/test/`. `android.util.Log` is a no-op there
+The wake word listener lives in `wakeword/`, a library module that `app/`
+includes, and runs in a process of its own, `:wakeword` (its screen, service
+and receiver all do), so Vosk's native code can't take the home screen down,
+as the calls are in `:call`. It has to be part of AstroDock rather than an
+app of its own: the Portal silences the microphone of any app without an
+activity in front (see the platform notes), and it is AstroDock's home
+screen or screensaver that is in front whenever it should listen. It
+knows nothing of the rest of AstroDock but its state broadcast
+(`AstroDockState`, whose names must match `StateBroadcast`'s). Its sources
+are in `wakeword/src/main/java/com/nicobrailo/astrodock/wakeword/`:
+- `ListenerService.kt`: a foreground service that runs while the wake word is
+  switched on or its screen is open, receives the broadcasts (a receiver in
+  the manifest wouldn't get them), and opens the microphone only while
+  `ListenGate` allows. It recognises with Vosk, on the CPU, since the
+  Portal's own wake word is gone (see the platform notes), given a grammar of
+  just "hey portal" and "[unk]", and an utterance holding the phrase
+  (`WakeWord.heard`, unit tested) plays `Chime`, two notes made in code (unit
+  tested). Every utterance is logged with each word's confidence, which is
+  what tells a false alarm or a miss, and the level every 3s. A microphone
+  that fails to open (another app has it) is tried again after 10s.
+  `START_STICKY`, and `StartReceiver` starts it again after a boot or an
+  update.
+- `MicReader.kt`: reads the microphone on a thread and feeds Vosk, as Vosk's
+  own `SpeechService` would, and measures the level (`dbfs`, unit tested),
+  which is what tells a microphone giving silence from a phrase not
+  recognised. Its source is a setting (voice recognition by default, which
+  works on the Portal+).
+- `ListenGate.kt` (pure, unit tested): it listens only while the camera sees
+  somebody (`occupancy.occupied` true, which is the screen's guess on a device
+  whose log AstroDock can't read), AstroDock's pictures are on screen
+  (`slideshow.active`), no call is up and the night rule doesn't apply. The
+  pictures being on screen is what keeps it out of other apps' way: up to
+  Android 9 only one app can record at a time, the next one to try simply
+  fails, and WhatsApp, BatiDoorLink and AstroDock's own calls all come to the
+  front before they record. A camera that can't see doesn't count as
+  somebody, so the lens cover (which leaves the microphone on) closes it too.
+  While its own screen is open it listens whatever AstroDock says.
+- `WakewordActivity.kt` + `res/xml/wakeword_preferences.xml`: the Wake Word
+  app in the app list (`LauncherModel.OWN_APPS`), with its own icon and task,
+  like the alarms and the calls: the switch for listening in the background
+  (off by default; turning it on asks for the microphone), and, live, what it
+  is doing and why (`ListenerStatus`, which only exists in `:wakeword`), the
+  level, what it hears and when it last heard the phrase, plus the audio
+  source and a button that plays the chime. The settings are in their own
+  file, `wakeword.xml` (`WakewordSettings`), read only by `:wakeword`, since
+  SharedPreferences are cached per process; a file written from outside, over
+  `run-as`, needs the app stopped first, or the process's cached copy is
+  saved back over it. Its resources share the app's namespace once merged, so
+  they are named `wakeword_*` or `ic_wakeword*`: an `xml/preferences.xml` of
+  its own was replaced by the Slideshow tab's.
+- `build.gradle.kts` downloads the model (`vosk-model-small-en-us-0.15`, 40
+  MB, whose vocabulary has both words) once into Gradle's cache, checks its
+  sha256, and unpacks it into the assets with the `uuid` file Vosk's
+  `StorageService` uses to tell when the copy on the device is out of date.
+  It and Vosk's native library are about 55 MB of AstroDock's APK.
+- The microphone is AstroDock's `RECORD_AUDIO`, which the calls use too, so
+  `tools/push-config.sh --calls-enabled false` leaves it granted while the
+  wake word is on.
+
+Unit tests are in `app/src/test/` and `wakeword/src/test/`. `android.util.Log` is a no-op there
 (`unitTests.isReturnDefaultValues`), and `org.json` is a stub, so code that
 parses JSON can't be unit tested on the JVM.
 
@@ -1142,6 +1213,27 @@ using it.
   session turned local and Spotify started an `AudioTrack` here at once.
   Measured 2026-10-04. Untested: a device paused for longer, or one that
   isn't paused but has gone away.
+- **The Portal's own "Hey Portal" wake word is gone**, on the Portal+ at
+  least (measured 2026-11-22, firmware of that date): saying it logs nothing
+  at all. Meta's services still refer to `com.facebook.alohaservices.hotword`,
+  which isn't on the device in any form, Alexa (still the
+  `voice_interaction_service`) isn't installed, and of Qualcomm's sound
+  trigger HAL only the generic HIDL wrapper is left. Loading a model of our
+  own into the DSP would need `MANAGE_SOUND_TRIGGER`, which adb can't grant.
+  Nothing else holds the microphone, which is why the wake word listener
+  (`wakeword/`) recognises on the CPU. Not checked on the Portal Go.
+- **The Portal silences the microphone for any app without an activity in
+  front**, foreground service or not. Its `AudioPolicyService` has a
+  `ProcessPolicy` that logs `onUidForeground() silencing for <uid> -> 0` as
+  an app's last activity leaves the front, and the recording carries on
+  delivering zeros (-96 dBFS) rather than failing. Measured 2026-11-22 on the
+  Portal+ with the wake word listener as an app of its own: -30 to -40 dBFS
+  with its own screen in front, -96 the moment the home screen was. It is
+  per uid, and a screensaver counts as in front: in AstroDock's `:wakeword`
+  process the level stayed real (-23 to -78 dBFS) on the home screen, under
+  the screensaver started over it, and under the one the screen wakes into
+  after being off, with no activity resumed at all, and "hey portal" was
+  recognised there.
 - **Neither the Portal+ nor the Portal Go has a hardware echo canceller or
   noise suppressor** for an app (WebRTC logs "HW AEC not supported"), so
   calls use WebRTC's software ones. Measured 2026-09-30.

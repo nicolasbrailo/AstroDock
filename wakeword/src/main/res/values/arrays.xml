@@ -1,0 +1,17 @@
+<resources>
+    <!-- The audio inputs to record from; the values are WakewordSettings.SOURCES' keys -->
+    <string-array name="source_names">
+        <item>Voice recognition</item>
+        <item>Voice call</item>
+        <item>Microphone</item>
+        <item>Camcorder</item>
+        <item>Unprocessed</item>
+    </string-array>
+    <string-array name="source_values">
+        <item>voice_recognition</item>
+        <item>voice_communication</item>
+        <item>mic</item>
+        <item>camcorder</item>
+        <item>unprocessed</item>
+    </string-array>
+</resources>

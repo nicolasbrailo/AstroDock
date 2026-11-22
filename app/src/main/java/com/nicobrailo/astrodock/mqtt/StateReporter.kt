@@ -237,6 +237,9 @@ class StateReporter private constructor(private val context: Context) {
         // runs is picked up the next time a slideshow appears. Before the
         // broker settings, since the alert and the calls need it without MQTT.
         watchPortal()
+        // The screen and the sensors, likewise without MQTT: the record is
+        // also broadcast on the device (StateBroadcast)
+        watchDevice()
         // Not part of MqttSettings, since they don't need a new connection:
         // the record only has to say so
         val calls = CallSettings.load(context).enabled
@@ -260,7 +263,6 @@ class StateReporter private constructor(private val context: Context) {
             return
         }
 
-        watchDevice()
         connectJob = scope.launch {
             // Settings that changed while this was checking have a check of
             // their own under way
@@ -956,7 +958,16 @@ class StateReporter private constructor(private val context: Context) {
         val text = state.toString()
         if (!force && text == lastState) return
         lastState = text
-        publish("state", state.put("ts", System.currentTimeMillis() / 1000))
+        state.put("ts", System.currentTimeMillis() / 1000)
+        StateBroadcast.send(context, state)
+        publish("state", state)
+    }
+
+    // The record as it is now, for an app on the device that has just asked
+    // for it (StateRequestReceiver). Only broadcast: MQTT already has it.
+    fun broadcastState() {
+        val state = stateJson(SystemClock.elapsedRealtime())
+        StateBroadcast.send(context, state.put("ts", System.currentTimeMillis() / 1000))
     }
 
     // Everything but the timestamp, so two records can be compared. Unknown

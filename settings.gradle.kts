@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "AstroDock"
 include(":app")
+include(":wakeword")

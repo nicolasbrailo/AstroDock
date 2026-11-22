@@ -15,6 +15,7 @@ import android.os.UserManager
 import android.util.Log
 import com.nicobrailo.astrodock.AlarmsActivity
 import com.nicobrailo.astrodock.CallsActivity
+import com.nicobrailo.astrodock.wakeword.WakewordActivity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -107,7 +108,7 @@ class LauncherModel(private val context: Context, private val onChanged: () -> U
     }
 
     // Every launchable app in every profile, except this launcher, sorted by
-    // name. The alarms and the calls are listed, being the parts of this app
+    // name. The alarms, the calls and the wake word are listed, being the parts of this app
     // that are meant to look like apps of their own (OWN_APPS). Loading labels and icons reads each app's resources, so not on the
     // main thread.
     suspend fun apps(): List<LauncherApp> = withContext(Dispatchers.IO) {
@@ -272,7 +273,11 @@ class LauncherModel(private val context: Context, private val onChanged: () -> U
 
         // Our activities that the app list shows as apps, unlike the rest of
         // this package (the home screen itself, its settings)
-        val OWN_APPS = setOf(AlarmsActivity::class.java.name, CallsActivity::class.java.name)
+        val OWN_APPS = setOf(
+            AlarmsActivity::class.java.name,
+            CallsActivity::class.java.name,
+            WakewordActivity::class.java.name,
+        )
     }
 
     fun launch(app: LauncherApp) {
